@@ -1,0 +1,45 @@
+# Python virtual environments
+venv/
+backend/venv/
+backend/venv*/
+.venv/
+env/
+
+# Python bytecode & cache
+__pycache__/
+backend/__pycache__/
+backend/*/__pycache__/
+backend/*/*/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Node dependencies & production build
+node_modules/
+frontend/node_modules/
+frontend/dist/
+dist/
+
+# Logs
+*.log
+backend/*.log
+backend/uvicorn.log
+backend/scraper.log
+frontend/vite.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Outbound / temporary runtime email attachments
+backend/storage/sent_emails/
+
+# OS specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.tempmediaStorage/

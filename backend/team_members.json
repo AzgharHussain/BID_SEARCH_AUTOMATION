@@ -1,0 +1,26 @@
+[
+  {
+    "email": "swethagisfy@gmail.com",
+    "name": "Swetha (GISFY)",
+    "role": "Executive Reviewer & Lead",
+    "added_at": "2026-10-16T15:47:00"
+  },
+  {
+    "email": "proposals-team@gisfy.co.in",
+    "name": "GISFY Proposals Team",
+    "role": "Bidding Team",
+    "added_at": "2026-10-15T12:00:00"
+  },
+  {
+    "email": "tenders@gisfy.co.in",
+    "name": "GISFY Tender Ops",
+    "role": "Procurement Lead",
+    "added_at": "2026-10-15T12:00:00"
+  },
+  {
+    "email": "director.projects@gisfy.co.in",
+    "name": "Project Director",
+    "role": "Executive Review",
+    "added_at": "2026-10-15T12:00:00"
+  }
+]
