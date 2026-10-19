@@ -30,6 +30,13 @@ export const formatDateTimeDMY = (dateInput) => {
   return `${datePart}, ${timePart}`;
 };
 
+// Dynamic backend API URL for local and remote server environments
+export const API_BASE = import.meta.env.VITE_API_BASE || (
+  typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
+    ? `${window.location.protocol}//${window.location.hostname}:8000`
+    : 'http://127.0.0.1:8000'
+);
+
 function App() {
   const [reportData, setReportData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -191,7 +198,7 @@ function App() {
   const [logs, setLogs] = useState([
     { type: 'command', text: 'gisfy-agent@procurements:~$ ./scraper.sh --watch --all-29-states', isUserCmd: true },
     { type: 'info', text: '🚀 [BASH INITIALIZED] Real-Time Procurement Scraper & Live Portal Monitor Active.', isUserCmd: true },
-    { type: 'success', text: '🟢 Connected to Backend API (http://127.0.0.1:8000).', isUserCmd: true },
+    { type: 'success', text: `🟢 Connected to Backend API (${API_BASE}).`, isUserCmd: true },
     { type: 'normal', text: 'Type "help" below or click quick action buttons above to run BASH commands.', isUserCmd: true }
   ]);
   const [terminalCmdInput, setTerminalCmdInput] = useState('');
@@ -205,7 +212,7 @@ function App() {
 
   const fetchReport = async () => {
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/reports/state-keyword');
+      const response = await fetch(`${API_BASE}/api/reports/state-keyword`);
       if (response.ok) {
         const data = await response.json();
         const sortedData = Array.isArray(data) ? [...data].sort((a, b) => (a.state_name || '').localeCompare(b.state_name || '')) : data;
@@ -261,7 +268,7 @@ function App() {
 
   const fetchLogs = async () => {
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/logs');
+      const response = await fetch(`${API_BASE}/api/logs`);
       if (response.ok) {
         const data = await response.json();
         if (data && data.length > 0) {
@@ -281,7 +288,7 @@ function App() {
 
   const fetchSyncStatus = async () => {
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/sync/status');
+      const response = await fetch(`${API_BASE}/api/sync/status`);
       if (response.ok) {
         const data = await response.json();
         setSyncStatus(data);
@@ -338,7 +345,7 @@ function App() {
     setSimulatingUpload(true);
     showToast(`📡 Ingesting official portal notification for ${targetState}...`, 'info');
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/sync/trigger-portal-alert?state=${encodeURIComponent(targetState)}&keyword=${encodeURIComponent(selectedSimKeyword)}`, {
+      const res = await fetch(`${API_BASE}/api/sync/trigger-portal-alert?state=${encodeURIComponent(targetState)}&keyword=${encodeURIComponent(selectedSimKeyword)}`, {
         method: 'POST'
       });
       if (res.ok) {
@@ -368,7 +375,7 @@ function App() {
     setSyncingNow(true);
     showToast("🚀 Initiating 15-Minute Live Portal Sync across all 29 official state portals...", "info");
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/sync/run-now', {
+      const res = await fetch(`${API_BASE}/api/sync/run-now`, {
         method: 'POST'
       });
       if (res.ok) {
@@ -393,7 +400,7 @@ function App() {
     setCompressingDocId(doc.id);
     showToast(`🗜️ Compacting large PDF "${doc.file_name}"...`, 'info');
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/documents/${doc.id}/compress`, {
+      const res = await fetch(`${API_BASE}/api/documents/${doc.id}/compress`, {
         method: 'POST'
       });
       if (res.ok) {
@@ -420,7 +427,7 @@ function App() {
     setCompressingAll(true);
     showToast('🗜️ Initiating PDF Compression Engine across all 29 states... Streaming logs to Agent Terminal.', 'info');
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/documents/compress-all?threshold_mb=1.0', {
+      const res = await fetch(`${API_BASE}/api/documents/compress-all?threshold_mb=1.0`, {
         method: 'POST'
       });
       if (res.ok) {
@@ -537,7 +544,7 @@ function App() {
 
     try {
       const query = (doc.id && doc.id < 800000) ? `id=${doc.id}` : `path=${encodeURIComponent(doc.local_path || '')}`;
-      const res = await fetch(`http://127.0.0.1:8000/api/documents/info?${query}`);
+      const res = await fetch(`${API_BASE}/api/documents/info?${query}`);
       if (res.ok) {
         const meta = await res.json();
         setDocMetadata(meta);
@@ -569,7 +576,7 @@ function App() {
     setDownloadingId(docKey);
     try {
       const query = (doc.id && doc.id < 800000) ? `id=${doc.id}` : `path=${encodeURIComponent(doc.local_path || '')}`;
-      const url = `http://127.0.0.1:8000/api/documents/download?${query}&attachment=true`;
+      const url = `${API_BASE}/api/documents/download?${query}&attachment=true`;
       
       const response = await fetch(url);
       if (!response.ok) {
@@ -630,7 +637,7 @@ function App() {
     setDownloadingTenderId(tender.id);
     showToast(`⏳ Packaging authentic documents for Tender ${tender.tender_id}...`, 'info');
     try {
-      const url = `http://127.0.0.1:8000/api/tenders/${tender.id}/download-bundle`;
+      const url = `${API_BASE}/api/tenders/${tender.id}/download-bundle`;
       const response = await fetch(url);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -665,7 +672,7 @@ function App() {
     setAutoDownloading(true);
     showToast("🚀 Initiating Backend Automatic Downloader across all states...", "info");
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/documents/auto-download', {
+      const response = await fetch(`${API_BASE}/api/documents/auto-download`, {
         method: 'POST'
       });
       if (response.ok) {
@@ -689,7 +696,7 @@ function App() {
     setScrapingState(stateName);
     showToast(`🚀 Triggering live scraper for ${stateName}... Monitor Agent Terminal.`, 'info');
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/states/${encodeURIComponent(stateName)}/scrape`, {
+      const res = await fetch(`${API_BASE}/api/states/${encodeURIComponent(stateName)}/scrape`, {
         method: 'POST'
       });
       if (res.ok) {
@@ -712,7 +719,7 @@ function App() {
   // ==========================================
   async function fetchTeamMembers() {
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/email/team-members');
+      const res = await fetch(`${API_BASE}/api/email/team-members`);
       if (res.ok) {
         const data = await res.json();
         setTeamMembers(data);
@@ -726,7 +733,7 @@ function App() {
   async function fetchEmailHistory() {
     setLoadingHistory(true);
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/email/history');
+      const res = await fetch(`${API_BASE}/api/email/history`);
       if (res.ok) {
         const data = await res.json();
         setEmailHistory(data);
@@ -800,7 +807,7 @@ function App() {
 
   const fetchPartnersSummary = async () => {
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/partners/stats/summary');
+      const res = await fetch(`${API_BASE}/api/partners/stats/summary`);
       if (res.ok) {
         const data = await res.json();
         setPartnersSummary(data);
@@ -831,7 +838,7 @@ function App() {
     try {
       if (tender && tender.id) {
         const scoreParam = minScoreVal !== null && minScoreVal !== undefined ? minScoreVal : 80;
-        const res = await fetch(`http://127.0.0.1:8000/api/partners/search-by-tender/${tender.id}?min_score=${scoreParam}`);
+        const res = await fetch(`${API_BASE}/api/partners/search-by-tender/${tender.id}?min_score=${scoreParam}`);
         if (res.ok) {
           const data = await res.json();
           setPartnersList(data.partners || []);
@@ -839,7 +846,7 @@ function App() {
           setPartnersList([]);
         }
       } else {
-        const res = await fetch('http://127.0.0.1:8000/api/partners');
+        const res = await fetch(`${API_BASE}/api/partners`);
         if (res.ok) {
           const data = await res.json();
           setPartnersList(data.map(p => ({
@@ -878,7 +885,7 @@ function App() {
   const handleUpdateCollaborationStatus = async (partnerId, newStatus) => {
     if (!selectedPartnerTender) return;
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/partners/collaboration-status', {
+      const res = await fetch(`${API_BASE}/api/partners/collaboration-status`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -904,7 +911,7 @@ function App() {
     setOutreachPartner(partner);
     setOutreachLoading(true);
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/partners/initiate-outreach', {
+      const res = await fetch(`${API_BASE}/api/partners/initiate-outreach`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -937,7 +944,7 @@ function App() {
     }
     setSavingPartner(true);
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/partners', {
+      const res = await fetch(`${API_BASE}/api/partners`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newPartnerForm)
@@ -1020,7 +1027,7 @@ function App() {
       return;
     }
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/email/team-members', {
+      const res = await fetch(`${API_BASE}/api/email/team-members`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1050,7 +1057,7 @@ function App() {
   const handleDeleteTeamMember = async (emailToDelete, e) => {
     if (e) e.stopPropagation();
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/email/team-members?email=${encodeURIComponent(emailToDelete)}`, {
+      const res = await fetch(`${API_BASE}/api/email/team-members?email=${encodeURIComponent(emailToDelete)}`, {
         method: 'DELETE'
       });
       if (res.ok) {
@@ -1076,7 +1083,7 @@ function App() {
         attach_zip_bundle: emailAttachZip,
         custom_notes: emailNotes || null
       };
-      const res = await fetch('http://127.0.0.1:8000/api/email/preview', {
+      const res = await fetch(`${API_BASE}/api/email/preview`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -1115,7 +1122,7 @@ function App() {
         custom_notes: emailNotes || null
       };
 
-      const res = await fetch('http://127.0.0.1:8000/api/email/send', {
+      const res = await fetch(`${API_BASE}/api/email/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -1556,7 +1563,7 @@ function App() {
           </button>
 
           <a
-            href="http://127.0.0.1:8000/api/reports/proposals-excel"
+            href={`${API_BASE}/api/reports/proposals-excel`}
             className="excel-export-header-btn"
             target="_blank"
             rel="noopener noreferrer"
@@ -1565,7 +1572,7 @@ function App() {
             📥 Export to Excel (.xlsx)
           </a>
           <a
-            href="http://127.0.0.1:8000/api/reports/excel-view"
+            href={`${API_BASE}/api/reports/excel-view`}
             className="excel-export-header-btn"
             style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)' }}
             target="_blank"
@@ -2605,7 +2612,7 @@ function App() {
         const displayName = docMetadata?.file_name || previewDoc.file_name;
         const officialPortalUrl = docMetadata?.portal_tender_url || docMetadata?.portal_url || previewDoc.portalTenderUrl || 'https://eprocure.gov.in';
         const query = previewDoc.id ? `id=${previewDoc.id}` : `path=${encodeURIComponent(previewDoc.local_path || '')}`;
-        const previewUrl = `http://127.0.0.1:8000/api/documents/preview?${query}`;
+        const previewUrl = `${API_BASE}/api/documents/preview?${query}`;
 
         return (
           <div className="modal-overlay" onClick={closePreview}>
@@ -2784,7 +2791,7 @@ function App() {
                                     <td>{af.is_pdf ? 'PDF Document' : 'Attachment'}</td>
                                     <td style={{ textAlign: 'right' }}>
                                       <a 
-                                        href={`http://127.0.0.1:8000/api/documents/archive-subfile?id=${previewDoc.id}&filename=${encodeURIComponent(af.name)}`}
+                                        href={`${API_BASE}/api/documents/archive-subfile?id=${previewDoc.id}&filename=${encodeURIComponent(af.name)}`}
                                         target="_blank" 
                                         rel="noopener noreferrer"
                                         className="subfile-action-link"
@@ -2793,7 +2800,7 @@ function App() {
                                         👁 View
                                       </a>
                                       <a 
-                                        href={`http://127.0.0.1:8000/api/documents/archive-subfile?id=${previewDoc.id}&filename=${encodeURIComponent(af.name)}`}
+                                        href={`${API_BASE}/api/documents/archive-subfile?id=${previewDoc.id}&filename=${encodeURIComponent(af.name)}`}
                                         download={af.name.split('/').pop()}
                                         className="subfile-action-link dl"
                                         title="Download individual file"
@@ -3106,7 +3113,7 @@ function App() {
                 📜 Sent History ({emailHistory.length})
               </button>
               <a
-                href="http://127.0.0.1:8000/api/reports/proposals-excel"
+                href={`${API_BASE}/api/reports/proposals-excel`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="email-tab-btn"
@@ -3115,7 +3122,7 @@ function App() {
                 📥 Download Master Excel (.xlsx)
               </a>
               <a
-                href="http://127.0.0.1:8000/api/reports/excel-view"
+                href={`${API_BASE}/api/reports/excel-view`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="email-tab-btn"
@@ -3471,7 +3478,7 @@ function App() {
                           </div>
                           <div className="email-history-right">
                             <a 
-                              href={`http://127.0.0.1:8000${item.view_url}`}
+                              href={`${API_BASE}${item.view_url}`}
                               target="_blank" 
                               rel="noopener noreferrer"
                               className="email-history-view-link"
