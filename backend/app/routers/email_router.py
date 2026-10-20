@@ -10,10 +10,15 @@ from app.services.email_service import (
     remove_team_member,
     send_email_dispatch,
     build_state_email_html,
-    SENT_EMAILS_DIR
+    SENT_EMAILS_DIR,
+    get_smtp_status,
+    save_smtp_config,
+    test_smtp_connection
 )
+from app.schemas.schemas import SmtpConfigPayload, SmtpTestPayload
 from app.db.database import SessionLocal
 from app.models import models
+
 
 router = APIRouter()
 
@@ -190,3 +195,38 @@ def view_saved_email(filename: str):
         raise HTTPException(status_code=404, detail="Email archive not found.")
     with open(p, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read())
+
+
+@router.get("/smtp-status")
+def get_smtp_status_endpoint():
+    """Retrieve current outbound email delivery mode and SMTP server configuration."""
+    return get_smtp_status()
+
+
+@router.post("/smtp-config")
+def save_smtp_config_endpoint(payload: SmtpConfigPayload):
+    """Save SMTP server settings (Gmail / custom server) to backend environment."""
+    if not payload.host or not payload.user or not payload.password:
+        raise HTTPException(status_code=400, detail="Host, username/email, and password are required.")
+    try:
+        return save_smtp_config(
+            host=payload.host,
+            port=payload.port,
+            user=payload.user,
+            password=payload.password,
+            from_email=payload.from_email,
+            use_tls=payload.use_tls
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update SMTP configuration: {e}")
+
+
+@router.post("/test")
+def test_smtp_connection_endpoint(payload: SmtpTestPayload):
+    """Send an immediate verification email to test SMTP connectivity."""
+    target_email = payload.target_email or "swethagisfy@gmail.com"
+    res = test_smtp_connection(target_email=target_email)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res.get("message", "SMTP test failed."))
+    return res
+

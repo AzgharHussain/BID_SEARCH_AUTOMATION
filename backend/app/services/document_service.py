@@ -25,7 +25,10 @@ def is_valid_pdf(file_path: Path) -> bool:
     if not file_path or not file_path.exists() or file_path.stat().st_size < 300:
         return False
     try:
-        import fitz
+        try:
+            import pymupdf as fitz
+        except ImportError:
+            import fitz
         pdoc = fitz.open(str(file_path))
         is_ok = len(pdoc) > 0
         pdoc.close()
@@ -52,9 +55,12 @@ def generate_bundle_zip(tender, out_path: Path):
     if not real_files:
         return None
         
+    added_names = set()
     with zipfile.ZipFile(out_path, 'w', zipfile.ZIP_DEFLATED) as zf:
         for f in real_files:
-            zf.write(f, arcname=f.name)
+            if f.name not in added_names:
+                zf.write(f, arcname=f.name)
+                added_names.add(f.name)
             
     return out_path
 

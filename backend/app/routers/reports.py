@@ -5,11 +5,12 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from app.db.database import get_db
 from app.models import models
 
 router = APIRouter()
+STORAGE_ROOT = Path(__file__).resolve().parent.parent.parent / "storage"
 
 def format_dmy(val: Any) -> str:
     """Format a date or date string to Date, Month, Year format: e.g. '19 Oct 2026'."""
@@ -28,8 +29,17 @@ def format_dmy(val: Any) -> str:
     return str(val)
 
 @router.get("/state-keyword")
-def get_state_keyword_report(db: Session = Depends(get_db)):
-    states = db.query(models.State).order_by(models.State.name.asc()).all()
+def get_state_keyword_report(
+    published_on: Optional[str] = Query(None, description="Filter tenders published on specific date (YYYY-MM-DD)"),
+    start_date: Optional[str] = Query(None, description="Filter tenders published on or after date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="Filter tenders published on or before date (YYYY-MM-DD)"),
+    days: Optional[int] = Query(None, description="Filter tenders published within past N days"),
+    db: Session = Depends(get_db)
+):
+    states = db.query(models.State).options(
+        selectinload(models.State.tenders).selectinload(models.Tender.documents),
+        selectinload(models.State.tenders).selectinload(models.Tender.keywords)
+    ).order_by(models.State.name.asc()).all()
     all_kws = db.query(models.Keyword).filter(models.Keyword.is_active == True).all()
     report = []
     
@@ -46,14 +56,41 @@ def get_state_keyword_report(db: Session = Depends(get_db)):
         # Build tender objects once per tender
         state_keywords = {}
         for tender in state.tenders:
+            if tender.published_date:
+                pub_date_str = tender.published_date.strftime("%Y-%m-%d")
+                if published_on and pub_date_str != published_on:
+                    continue
+                if start_date and pub_date_str < start_date:
+                    continue
+                if end_date and pub_date_str > end_date:
+                    continue
+                if days:
+                    from datetime import timedelta
+                    cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+                    if pub_date_str < cutoff:
+                        continue
             raw_docs = []
+            tender_id_str = str(tender.tender_id)
+
             for d in tender.documents:
-                total_docs += 1
-                is_on_disk = bool(d.local_path and os.path.exists(d.local_path))
-                if is_on_disk:
-                    downloaded_docs += 1
-                    
-                size_kb = round(os.path.getsize(d.local_path) / 1024, 1) if is_on_disk else (d.portal_size_kb or 0.0)
+                raw_db_path = d.local_path or ""
+                # Check if authentic file exists on disk, either by exact path or normalized to local storage
+                is_on_disk = False
+                disk_path = None
+                if raw_db_path:
+                    if os.path.exists(raw_db_path):
+                        is_on_disk = True
+                        disk_path = raw_db_path
+                    else:
+                        parts = Path(raw_db_path).parts
+                        if "storage" in parts:
+                            s_idx = parts.index("storage")
+                            candidate = STORAGE_ROOT.joinpath(*parts[s_idx + 1:])
+                            if candidate.exists():
+                                is_on_disk = True
+                                disk_path = str(candidate)
+
+                size_kb = round(os.path.getsize(disk_path) / 1024, 1) if (is_on_disk and disk_path) else (d.portal_size_kb or 0.0)
                 ext = (d.file_type or Path(d.file_name).suffix).lower()
                 if not ext and "zip" in d.file_name.lower():
                     ext = ".zip"
@@ -65,7 +102,8 @@ def get_state_keyword_report(db: Session = Depends(get_db)):
                     "id": d.id,
                     "file_name": d.file_name,
                     "file_type": ext,
-                    "local_path": d.local_path if is_on_disk else None,
+                    "raw_db_path": raw_db_path,
+                    "local_path": disk_path if is_on_disk else None,
                     "source_url": d.source_url or tender.portal_tender_url or state.portal_url,
                     "download_status": "downloaded" if is_on_disk else "portal_notice",
                     "verified": bool(is_on_disk),
@@ -75,37 +113,36 @@ def get_state_keyword_report(db: Session = Depends(get_db)):
                     "is_bundle": is_bundle,
                     "is_large": is_large,
                     "is_pdf": ext == ".pdf",
-                    "is_xlsx": ext in [".xls", ".xlsx"]
+                    "is_xlsx": ext in [".xls", ".xlsx"],
+                    "sub_documents": [],
+                    "is_sub_document": False
                 })
 
             # Universal Document Grouping across all states and tenders
             # 1. Map existing zip archives by stem and flag duplicate internal bundles
             zip_by_stem = {}
             for doc in raw_docs:
-                doc["sub_documents"] = []
-                doc["is_sub_document"] = False
                 fn = doc["file_name"].lower()
                 doc["is_duplicate_bundle"] = (fn == "bundle_zip.zip")
-                if doc["file_type"] == ".zip" and not doc["is_duplicate_bundle"]:
+                if doc["file_type"] == ".zip" and not doc["is_duplicate_bundle"] and "all_documents" not in fn:
                     stem = Path(doc["file_name"]).stem.lower()
                     zip_by_stem[stem] = doc
 
             # 2. Check each document: group any file inside a subfolder under tender_id into its parent archive
             top_level_docs = []
             synthesized_zips = {}
-            tender_id_str = str(tender.tender_id)
 
             for doc in raw_docs:
                 if doc.get("is_duplicate_bundle"):
                     continue
 
-                lp = doc.get("local_path")
+                raw_path = doc.get("raw_db_path") or ""
                 is_sub = False
                 parent_zip_doc = None
                 top_folder = None
 
-                if lp:
-                    parts = Path(lp).parts
+                if raw_path:
+                    parts = Path(raw_path).parts
                     if tender_id_str in parts:
                         t_idx = parts.index(tender_id_str)
                         if len(parts) > t_idx + 2:
@@ -120,7 +157,7 @@ def get_state_keyword_report(db: Session = Depends(get_db)):
                         parent_zip_doc = zip_by_stem[folder_key]
                     else:
                         for stem, zdoc in zip_by_stem.items():
-                            if stem.startswith(folder_key) or folder_key.startswith(stem):
+                            if stem == folder_key or stem.startswith(folder_key) or folder_key.startswith(stem):
                                 parent_zip_doc = zdoc
                                 break
 
@@ -128,14 +165,18 @@ def get_state_keyword_report(db: Session = Depends(get_db)):
                     if not parent_zip_doc:
                         if folder_key not in synthesized_zips:
                             disk_zip_path = None
-                            if lp:
-                                tender_dir = Path(*Path(lp).parts[:parts.index(tender_id_str) + 1])
-                                if tender_dir.exists():
-                                    for f in tender_dir.iterdir():
-                                        if f.is_file() and f.suffix.lower() == ".zip" and ("all_documents" not in f.name.lower()):
-                                            if f.stem.lower() == folder_key or f.stem.lower().startswith(folder_key) or folder_key.startswith(f.stem.lower()):
-                                                disk_zip_path = str(f)
-                                                break
+                            if doc.get("local_path"):
+                                lp = doc["local_path"]
+                                p_parts = Path(lp).parts
+                                if tender_id_str in p_parts:
+                                    tender_dir = Path(*p_parts[:p_parts.index(tender_id_str) + 1])
+                                    if tender_dir.exists():
+                                        for f in tender_dir.iterdir():
+                                            if f.is_file() and f.suffix.lower() == ".zip" and ("all_documents" not in f.name.lower()):
+                                                if f.stem.lower() == folder_key or f.stem.lower().startswith(folder_key) or folder_key.startswith(f.stem.lower()):
+                                                    disk_zip_path = str(f)
+                                                    break
+
                             zip_name = Path(disk_zip_path).name if disk_zip_path else f"{top_folder}.zip"
                             size_kb = round(os.path.getsize(disk_zip_path) / 1024, 1) if (disk_zip_path and os.path.exists(disk_zip_path)) else 45.0
                             synthesized_zips[folder_key] = {
@@ -144,7 +185,7 @@ def get_state_keyword_report(db: Session = Depends(get_db)):
                                 "file_type": ".zip",
                                 "local_path": disk_zip_path,
                                 "source_url": tender.portal_tender_url or state.portal_url,
-                                "download_status": "downloaded" if disk_zip_path else "ready",
+                                "download_status": "downloaded" if disk_zip_path else "portal_notice",
                                 "verified": bool(disk_zip_path),
                                 "file_size_kb": size_kb,
                                 "is_available": True,
@@ -199,10 +240,12 @@ def get_state_keyword_report(db: Session = Depends(get_db)):
 
             if not main_bundle and individual_docs:
                 bundle_path = None
-                if individual_docs[0].get("local_path"):
-                    p = Path(individual_docs[0]["local_path"]).parent / main_bundle_name
-                    if p.exists():
-                        bundle_path = str(p)
+                for doc_cand in individual_docs:
+                    if doc_cand.get("local_path"):
+                        p = Path(doc_cand["local_path"]).parent / main_bundle_name
+                        if p.exists():
+                            bundle_path = str(p)
+                            break
                 size_kb = round(os.path.getsize(bundle_path) / 1024, 1) if (bundle_path and os.path.exists(bundle_path)) else 45.0
                 main_bundle = {
                     "id": 900000 + tender.id,
@@ -210,7 +253,7 @@ def get_state_keyword_report(db: Session = Depends(get_db)):
                     "file_type": ".zip",
                     "local_path": bundle_path,
                     "source_url": tender.portal_tender_url or state.portal_url,
-                    "download_status": "downloaded" if bundle_path else "ready",
+                    "download_status": "downloaded" if bundle_path else "portal_notice",
                     "verified": bool(bundle_path),
                     "file_size_kb": size_kb,
                     "is_available": True,
@@ -248,6 +291,10 @@ def get_state_keyword_report(db: Session = Depends(get_db)):
 
             # Top-level portal files first (PDFs/spreadsheets/portal zips), and all-in-one ZIP at the end!
             docs = individual_docs + sub_bundles + ([main_bundle] if main_bundle else [])
+
+            # Accurately count genuine portal documents in statistics
+            total_docs += len(docs)
+            downloaded_docs += sum(1 for d in docs if d.get("is_downloaded"))
 
             now = datetime.utcnow()
             stage = "live"
@@ -313,6 +360,84 @@ def get_state_keyword_report(db: Session = Depends(get_db)):
     report.sort(key=lambda s: s["state_name"].lower())
 
     return report
+
+
+@router.get("/calendar-stats")
+def get_calendar_stats(days: int = Query(90, ge=7, le=365), db: Session = Depends(get_db)):
+    """Return 90-day proposal statistics and daily distribution map for the interactive calendar."""
+    from datetime import timedelta
+    anchor = datetime.utcnow()
+    start_date = (anchor - timedelta(days=days)).replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    future_window = anchor + timedelta(days=60)
+    
+    tenders = db.query(models.Tender).filter(
+        models.Tender.published_date >= start_date, 
+        models.Tender.published_date <= future_window
+    ).order_by(models.Tender.published_date.asc()).all()
+    
+    daily_stats = {}
+    monthly_stats = {}
+    
+    for t in tenders:
+        if not t.published_date:
+            continue
+        date_str = t.published_date.strftime("%Y-%m-%d")
+        month_str = t.published_date.strftime("%B %Y")
+        
+        if date_str not in daily_stats:
+            daily_stats[date_str] = {
+                "date": date_str,
+                "formatted": t.published_date.strftime("%d %b %Y"),
+                "day_name": t.published_date.strftime("%A"),
+                "count": 0,
+                "states": set(),
+                "keywords": set(),
+                "departments": set(),
+                "live_count": 0,
+                "closed_count": 0
+            }
+        daily_stats[date_str]["count"] += 1
+        if t.state and t.state.name:
+            daily_stats[date_str]["states"].add(t.state.name)
+        for kw in t.keywords:
+            daily_stats[date_str]["keywords"].add(kw.keyword)
+        if t.department:
+            daily_stats[date_str]["departments"].add(t.department)
+            
+        if t.last_date and t.last_date >= anchor:
+            daily_stats[date_str]["live_count"] += 1
+        else:
+            daily_stats[date_str]["closed_count"] += 1
+            
+        if month_str not in monthly_stats:
+            monthly_stats[month_str] = { "month": month_str, "count": 0 }
+        monthly_stats[month_str]["count"] += 1
+
+    serialized_daily = {}
+    for d, s in daily_stats.items():
+        serialized_daily[d] = {
+            "date": s["date"],
+            "formatted": s["formatted"],
+            "day_name": s["day_name"],
+            "count": s["count"],
+            "states_count": len(s["states"]),
+            "states": sorted(list(s["states"])),
+            "keywords": sorted(list(s["keywords"])),
+            "live_count": s["live_count"],
+            "closed_count": s["closed_count"]
+        }
+        
+    return {
+        "status": "success",
+        "window_days": days,
+        "start_date": start_date.strftime("%Y-%m-%d"),
+        "end_date": future_window.strftime("%Y-%m-%d"),
+        "total_proposals": len(tenders),
+        "active_dates_count": len(daily_stats),
+        "daily_stats": serialized_daily,
+        "monthly_summary": list(monthly_stats.values())
+    }
 
 
 @router.get("/proposals-excel")

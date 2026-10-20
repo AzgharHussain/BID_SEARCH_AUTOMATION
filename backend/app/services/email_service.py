@@ -726,3 +726,259 @@ def send_email_dispatch(
         tender_id=tender_id,
         event_prefix="STATE EMAIL DISPATCH"
     )
+
+
+def reload_smtp_env():
+    """Reload SMTP environment variables from backend/.env if modified."""
+    env_file = BASE_DIR / ".env"
+    if env_file.exists():
+        with open(env_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, val = line.split("=", 1)
+                    key = key.strip()
+                    val = val.strip().strip('"').strip("'")
+                    os.environ[key] = val
+
+
+def get_smtp_status() -> Dict[str, Any]:
+    """Retrieve current SMTP configuration status and delivery mode."""
+    reload_smtp_env()
+    smtp_host = os.getenv("SMTP_HOST")
+    smtp_user = os.getenv("SMTP_USER")
+    smtp_password = os.getenv("SMTP_PASSWORD")
+    is_configured = bool(smtp_host and smtp_user and smtp_password)
+
+    return {
+        "is_configured": is_configured,
+        "delivery_mode": "smtp" if is_configured else "local_archive",
+        "smtp_host": smtp_host or "Not Configured",
+        "smtp_port": int(os.getenv("SMTP_PORT", 587)),
+        "smtp_user": smtp_user or "None",
+        "smtp_from": os.getenv("SMTP_FROM", "GISFY Procurement System <notifications@gisfy.co.in>"),
+        "archive_directory": str(SENT_EMAILS_DIR)
+    }
+
+
+def save_smtp_config(
+    host: str,
+    port: int = 587,
+    user: str = "",
+    password: str = "",
+    from_email: Optional[str] = None,
+    use_tls: bool = True
+) -> Dict[str, Any]:
+    """Save SMTP credentials to backend/.env and update active environment."""
+    env_file = BASE_DIR / ".env"
+    lines = []
+    if env_file.exists():
+        with open(env_file, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+    # Filter out existing SMTP keys
+    smtp_keys = {"SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM", "SMTP_USE_TLS"}
+    filtered_lines = [l for l in lines if not any(l.strip().startswith(f"{k}=") for k in smtp_keys)]
+
+    from_val = from_email or f"GISFY Procurement System <{user}>"
+    new_smtp_block = [
+        f"SMTP_HOST={host}\n",
+        f"SMTP_PORT={port}\n",
+        f"SMTP_USER={user}\n",
+        f"SMTP_PASSWORD={password}\n",
+        f"SMTP_FROM={from_val}\n",
+        f"SMTP_USE_TLS={'true' if use_tls else 'false'}\n"
+    ]
+
+    with open(env_file, "w", encoding="utf-8") as f:
+        f.writelines(filtered_lines + ["\n"] + new_smtp_block)
+
+    # Update active os.environ
+    os.environ["SMTP_HOST"] = host
+    os.environ["SMTP_PORT"] = str(port)
+    os.environ["SMTP_USER"] = user
+    os.environ["SMTP_PASSWORD"] = password
+    os.environ["SMTP_FROM"] = from_val
+    os.environ["SMTP_USE_TLS"] = "true" if use_tls else "false"
+
+    log_email_event(f"[SMTP CONFIG] Updated SMTP server settings for {user} ({host}:{port})", "info")
+    return get_smtp_status()
+
+
+def test_smtp_connection(target_email: str = "swethagisfy@gmail.com") -> Dict[str, Any]:
+    """Send an immediate test verification email to target_email."""
+    reload_smtp_env()
+    smtp_host = os.getenv("SMTP_HOST")
+    smtp_port = int(os.getenv("SMTP_PORT", 587))
+    smtp_user = os.getenv("SMTP_USER")
+    smtp_password = os.getenv("SMTP_PASSWORD")
+
+    if not (smtp_host and smtp_user and smtp_password):
+        return {
+            "status": "error",
+            "message": "SMTP credentials are not configured in backend/.env. Please provide SMTP_USER and SMTP_PASSWORD.",
+            "is_configured": False
+        }
+
+    test_subject = f"✅ [GISFY SMTP Test] Connection Verified to {target_email}"
+    test_html = f"""
+    <div style="font-family: sans-serif; padding: 24px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0; max-width: 600px; margin: auto;">
+        <h2 style="color: #4f46e5; margin-top: 0;">🎉 GISFY Email Delivery Online!</h2>
+        <p>This is a live verification email from your <b>GISFY Automated Proposals Platform</b> delivered via <b>{smtp_host}:{smtp_port}</b>.</p>
+        <div style="background: #ffffff; padding: 14px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 13px;">
+            <b>Sender:</b> {os.getenv('SMTP_FROM', smtp_user)}<br/>
+            <b>Recipient:</b> {target_email}<br/>
+            <b>Timestamp:</b> {datetime.utcnow().strftime('%d %B %Y, %H:%M:%S UTC')}
+        </div>
+        <p style="font-size: 12px; color: #64748b; margin-top: 16px;">All automated proposal alerts and joint venture collaboration letters will now arrive directly in your inbox.</p>
+    </div>
+    """
+
+    res = _dispatch_html_email(
+        recipients=[target_email],
+        subject=test_subject,
+        html_content=test_html,
+        event_prefix="SMTP VERIFICATION TEST"
+    )
+    return res
+
+
+def build_collaboration_email_html(
+    tender: Any,
+    partner: Any,
+    match_info: Dict[str, Any],
+    letter_text: str,
+    jv_split: str,
+    custom_notes: Optional[str] = None,
+    gisfy_name: str = "Swetha (GISFY)",
+    gisfy_email: str = "swethagisfy@gmail.com"
+) -> str:
+    """Generate executive HTML email for Joint Venture / Consortium Collaboration LOI."""
+    state_name = tender.state.name if tender.state else "India"
+    dept_name = tender.department or f"State Government of {state_name}"
+    due_date_str = tender.last_date.strftime("%d %b %Y, %I:%M %p") if tender.last_date else "As per official portal notice"
+    tid = str(tender.tender_id or tender.id)
+
+    # Collect tender document links
+    docs_html = ""
+    if hasattr(tender, "documents") and tender.documents:
+        for d in tender.documents[:6]:
+            dl_url = f"http://127.0.0.1:8000/api/tenders/documents/download/{d.id}"
+            docs_html += f"""
+            <div style="padding: 7px 12px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; font-size: 12px;">
+                <span style="color: #1e293b; font-weight: 600;">📄 {d.file_name}</span>
+                <a href="{dl_url}" style="padding: 3px 9px; background: #6366f1; color: #ffffff; text-decoration: none; border-radius: 4px; font-size: 11px; font-weight: 700;">⬇ Download</a>
+            </div>
+            """
+
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>GISFY Consortium &amp; Joint Venture Collaboration Request</title>
+    </head>
+    <body style="margin: 0; padding: 0; background: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="background: #f8fafc; padding: 25px 10px;">
+            <tr>
+                <td align="center">
+                    <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 820px; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.06); border: 1px solid #e2e8f0;">
+                        <!-- Header Banner -->
+                        <tr>
+                            <td style="background: linear-gradient(135deg, #1e1b4b 0%, #312e81 40%, #4338ca 100%); padding: 32px 36px; color: #ffffff;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                    <span style="font-size: 16px; font-weight: 800; letter-spacing: 1px; color: #38bdf8; text-transform: uppercase;">
+                                        GISFY <span style="color: #ffffff; font-weight: 400;">STRATEGIC ALLIANCES &amp; PROPOSALS</span>
+                                    </span>
+                                    <span style="background: rgba(255,255,255,0.2); padding: 4px 14px; border-radius: 20px; font-size: 11px; font-weight: 700; color: #ffffff;">
+                                        🤝 JV &amp; CONSORTIUM OUTREACH
+                                    </span>
+                                </div>
+                                <h1 style="margin: 0 0 10px 0; font-size: 24px; font-weight: 800; color: #ffffff; line-height: 1.3;">
+                                    Letter of Intent for Joint Venture Bidding
+                                </h1>
+                                <p style="margin: 0; font-size: 13px; opacity: 0.9; color: #e0e7ff;">
+                                    Target Partner: <b>{partner.name}</b> • Prepared by: <b>{gisfy_name} ({gisfy_email})</b>
+                                </p>
+                            </td>
+                        </tr>
+
+                        <!-- Summary Cards -->
+                        <tr>
+                            <td style="padding: 24px 36px 0 36px;">
+                                <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 20px;">
+                                    <tr>
+                                        <td width="48%" style="vertical-align: top; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px;">
+                                            <div style="font-size: 11px; font-weight: 700; color: #6366f1; text-transform: uppercase; margin-bottom: 6px;">🏢 COLLABORATION PARTNER</div>
+                                            <div style="font-size: 15px; font-weight: 800; color: #0f172a; margin-bottom: 4px;">{partner.name}</div>
+                                            <div style="font-size: 12px; color: #475569; margin-bottom: 6px;">📍 {partner.city}, {partner.state}</div>
+                                            <div style="font-size: 11px; color: #64748b;">🎯 <b>Domain:</b> {partner.primary_domain}</div>
+                                            <div style="font-size: 11px; color: #64748b;">💰 <b>Turnover:</b> {partner.turnover}</div>
+                                            <div style="font-size: 11px; color: #64748b;">🌐 <a href="{partner.website}" style="color: #2563eb;">{partner.website}</a></div>
+                                        </td>
+                                        <td width="4%"></td>
+                                        <td width="48%" style="vertical-align: top; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px;">
+                                            <div style="font-size: 11px; font-weight: 700; color: #059669; text-transform: uppercase; margin-bottom: 6px;">📋 TARGET TENDER PROPOSAL</div>
+                                            <div style="font-size: 14px; font-weight: 800; color: #0f172a; margin-bottom: 4px;">Ref #{tid}</div>
+                                            <div style="font-size: 12px; color: #475569; margin-bottom: 6px;">🏛️ {dept_name} ({state_name})</div>
+                                            <div style="font-size: 11px; color: #b91c1c; font-weight: 700;">⏰ Due Date: {due_date_str}</div>
+                                            <div style="font-size: 11px; color: #64748b; margin-top: 4px;">🤝 <b>Proposed Split:</b> {jv_split}</div>
+                                            <div style="font-size: 11px; color: #0284c7; font-weight: 700; margin-top: 4px;">⭐ Match Score: {match_info.get('match_score')}% ({match_info.get('match_category')})</div>
+                                        </td>
+                                    </tr>
+                                </table>
+
+                                <!-- Strategic Synergy Box -->
+                                <div style="background: #eef2ff; border-left: 4px solid #4f46e5; padding: 14px 18px; border-radius: 8px; margin-bottom: 22px;">
+                                    <div style="font-size: 12px; font-weight: 800; color: #3730a3; margin-bottom: 4px;">🎯 WHY THIS PARTNER IS NEEDED:</div>
+                                    <div style="font-size: 13px; color: #1e1b4b; line-height: 1.5; margin-bottom: 8px;">{match_info.get('why_needed')}</div>
+                                    <div style="font-size: 12px; font-weight: 800; color: #3730a3; margin-bottom: 4px;">🤝 CONSORTIUM SCOPE DEMARCATION:</div>
+                                    <div style="font-size: 13px; color: #1e1b4b; line-height: 1.5;">{match_info.get('synergy_scope')}</div>
+                                </div>
+
+                                <!-- Letter of Intent Body -->
+                                <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 10px; padding: 22px 24px; margin-bottom: 24px; box-shadow: 0 2px 6px rgba(0,0,0,0.03);">
+                                    <div style="font-size: 12px; font-weight: 800; color: #475569; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">
+                                        📜 OFFICIAL LETTER OF INTENT (LOI)
+                                    </div>
+                                    <pre style="white-space: pre-wrap; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 12.5px; line-height: 1.6; color: #334155; margin: 0;">{letter_text}</pre>
+                                </div>
+
+                                {f'''
+                                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 20px; overflow: hidden;">
+                                    <div style="font-size: 11px; font-weight: 700; color: #475569; background: #f1f5f9; padding: 8px 12px;">📁 ATTACHED TENDER SPECIFICATION DOCUMENTS</div>
+                                    {docs_html}
+                                </div>
+                                ''' if docs_html else ''}
+
+                                <!-- Action Buttons -->
+                                <div style="background: #f1f5f9; border-radius: 10px; padding: 18px 24px; text-align: center; margin-bottom: 24px;">
+                                    <a href="http://127.0.0.1:5173" style="display: inline-block; padding: 10px 22px; background: #4f46e5; color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 13px; font-weight: 700; margin: 4px;">
+                                        🚀 Open Proposal in GISFY Dashboard
+                                    </a>
+                                    <a href="http://127.0.0.1:8000/api/reports/proposals-excel" style="display: inline-block; padding: 10px 22px; background: #059669; color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 13px; font-weight: 700; margin: 4px;">
+                                        📊 Download Master Excel
+                                    </a>
+                                    <a href="mailto:{gisfy_email}?subject=RE: [JV Agreement] Tender #{tid} - {partner.name}" style="display: inline-block; padding: 10px 22px; background: #0f172a; color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 13px; font-weight: 700; margin: 4px;">
+                                        ✍️ Reply / Confirm Joint Agreement
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+
+                        <!-- Footer -->
+                        <tr>
+                            <td style="background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 36px; text-align: center; font-size: 11px; color: #64748b;">
+                                <p style="margin: 0 0 6px 0;">This communication is confidential and intended solely for <b>{gisfy_name}</b> and <b>{partner.name}</b> for joint venture bidding purposes.</p>
+                                <p style="margin: 0;">GISFY Spatial Intelligence Directorate • Hyderabad, India • <a href="https://gisfy.co.in" style="color: #6366f1;">https://gisfy.co.in</a></p>
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+    </body>
+    </html>
+    """
+

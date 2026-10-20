@@ -140,3 +140,18 @@ def initiate_partner_outreach(payload: schemas.OutreachProposalRequest, db: Sess
         return partner_service.generate_outreach_proposal(db, payload)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/send-outreach-email")
+def send_partner_outreach_email_endpoint(
+    payload: schemas.CollaborationEmailDispatchRequest,
+    db: Session = Depends(get_db)
+):
+    """Dispatch official Collaboration LOI email to team and partner with HTML archiving."""
+    try:
+        return partner_service.send_collaboration_outreach_email(db, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to dispatch collaboration email: {e}")
+

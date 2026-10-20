@@ -220,3 +220,24 @@ class OutreachProposalResponse(BaseModel):
     proposal_letter: str
     collaboration_status: str
 
+class CollaborationEmailDispatchRequest(BaseModel):
+    tender_id: int
+    partner_id: int
+    recipients: Optional[List[str]] = ["swethagisfy@gmail.com"]
+    gisfy_contact_name: Optional[str] = "Swetha (GISFY)"
+    gisfy_contact_email: Optional[str] = "swethagisfy@gmail.com"
+    custom_message: Optional[str] = None
+    proposed_jv_split: Optional[str] = "60% Lead Bidder (GISFY) : 40% Specialized Partner"
+
+class SmtpConfigPayload(BaseModel):
+    host: str = "smtp.gmail.com"
+    port: int = 587
+    user: str
+    password: str
+    from_email: Optional[str] = None
+    use_tls: bool = True
+
+class SmtpTestPayload(BaseModel):
+    target_email: str = "swethagisfy@gmail.com"
+
+

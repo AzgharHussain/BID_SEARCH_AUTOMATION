@@ -6,7 +6,11 @@ Ensures all portal-ingested and live-synced tenders have valid, verifiable files
 import os
 import zipfile
 from pathlib import Path
-import fitz  # PyMuPDF
+try:
+    import pymupdf as fitz
+except ImportError:
+    import fitz  # PyMuPDF
+
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
@@ -227,13 +231,18 @@ def make_bundle_zip(target_path, tender, state_name, kw_name):
     if not boq_xlsx.exists():
         make_simple_xlsx(boq_xlsx, title, str(tender_id), dept)
         
+    added_names = set()
     with zipfile.ZipFile(target_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-        if pdf_notice.exists():
+        if pdf_notice.exists() and pdf_notice.name not in added_names:
             zf.write(pdf_notice, arcname=pdf_notice.name)
-        if boq_xlsx.exists():
+            added_names.add(pdf_notice.name)
+        if boq_xlsx.exists() and boq_xlsx.name not in added_names:
             zf.write(boq_xlsx, arcname=boq_xlsx.name)
+            added_names.add(boq_xlsx.name)
         for f in target_path.parent.iterdir():
             if f.is_file() and f != target_path and f.suffix.lower() in [".pdf", ".xlsx", ".xls", ".doc", ".docx"]:
-                zf.write(f, arcname=f.name)
+                if f.name not in added_names:
+                    zf.write(f, arcname=f.name)
+                    added_names.add(f.name)
                 
     return target_path

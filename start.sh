@@ -54,15 +54,18 @@ if lsof -i :5173 >/dev/null 2>&1; then
     echo "🟢 Frontend is already running on http://127.0.0.1:5173"
 else
     cd "$FRONTEND_DIR" || exit 1
-    # Ensure Node 18/20 is activated via NVM if present
+    # Ensure Node 20/18 is activated via NVM if present
+    for v in 20 18; do
+        found_dir=$(ls -d "$HOME/.nvm/versions/node"/v${v}* 2>/dev/null | tail -n 1)
+        if [ -n "$found_dir" ] && [ -d "$found_dir/bin" ]; then
+            export PATH="$found_dir/bin:$PATH"
+            break
+        fi
+    done
     export NVM_DIR="$HOME/.nvm"
     if [ -s "$NVM_DIR/nvm.sh" ]; then
         . "$NVM_DIR/nvm.sh"
         nvm use 20 >/dev/null 2>&1 || nvm use 18 >/dev/null 2>&1 || true
-        NODE_BIN_DIR="$(dirname "$(nvm which current 2>/dev/null || nvm which 20 2>/dev/null)")"
-        if [ -d "$NODE_BIN_DIR" ]; then
-            export PATH="$NODE_BIN_DIR:$PATH"
-        fi
     fi
     if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
         echo "⏳ Installing frontend dependencies..."
