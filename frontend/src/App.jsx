@@ -30,12 +30,19 @@ export const formatDateTimeDMY = (dateInput) => {
   return `${datePart}, ${timePart}`;
 };
 
-// Dynamic backend API URL for local and remote server environments
-export const API_BASE = import.meta.env.VITE_API_BASE || (
-  typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
-    ? `${window.location.protocol}//${window.location.hostname}:8000`
-    : 'http://127.0.0.1:8000'
-);
+// Dynamic backend API URL for local, docker container, and remote server environments
+export const API_BASE = import.meta.env.VITE_API_BASE !== undefined
+  ? import.meta.env.VITE_API_BASE
+  : (typeof window !== 'undefined' && (
+      window.location.port === '5173' || 
+      window.location.port === '80' || 
+      window.location.port === '443' || 
+      !window.location.port
+    )
+    ? ''
+    : (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
+        ? `${window.location.protocol}//${window.location.hostname}:8000`
+        : 'http://127.0.0.1:8000'));
 
 function App() {
   const [reportData, setReportData] = useState([]);
