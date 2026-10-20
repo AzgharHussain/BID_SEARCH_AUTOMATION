@@ -1751,9 +1751,9 @@ function App() {
       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
     ];
 
+    const monthOffsets = [0, -1, 1, 2, 3]; // 0=Oct 2026 (Current), -1=Nov 2026 (Upcoming), 1=Sep 2026, 2=Aug 2026, 3=Jul 2026
     const months = [];
-    // Dynamically generate rolling months: next month (+1 upcoming) and past 90 days (current + 3 past calendar months)
-    for (let i = -1; i < 4; i++) {
+    for (const i of monthOffsets) {
       const mDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const year = mDate.getFullYear();
       const monthNum = mDate.getMonth() + 1;
@@ -1763,16 +1763,18 @@ function App() {
       const firstDaySundayBased = new Date(year, monthNum - 1, 1).getDay();
       const offset = (firstDaySundayBased + 6) % 7;
       const isNextMonth = i === -1;
+      const isCurrentMonth = i === 0;
 
       months.push({
         key: monthKey,
-        name: isNextMonth ? `${monthNames[mDate.getMonth()]} ${year} (Upcoming)` : `${monthNames[mDate.getMonth()]} ${year}`,
-        shortName: isNextMonth ? `${monthShortNames[mDate.getMonth()]} (Upcoming)` : `${monthShortNames[mDate.getMonth()]} ${year}`,
+        name: isCurrentMonth ? `${monthNames[mDate.getMonth()]} ${year} (Current Month)` : isNextMonth ? `${monthNames[mDate.getMonth()]} ${year} (Upcoming)` : `${monthNames[mDate.getMonth()]} ${year}`,
+        shortName: isCurrentMonth ? `${monthShortNames[mDate.getMonth()]} ${year} (Current)` : isNextMonth ? `${monthShortNames[mDate.getMonth()]} (Upcoming)` : `${monthShortNames[mDate.getMonth()]} ${year}`,
         year,
         month: monthNum,
         days: daysInMonth,
         offset,
-        isNextMonth
+        isNextMonth,
+        isCurrentMonth
       });
     }
 
@@ -1888,6 +1890,22 @@ function App() {
     const activeDailyMap = calendarViewMode === 'DUE_DATE' ? dailyMapDue : dailyMapPub;
     const totalIn90Days = calendarViewMode === 'DUE_DATE' ? totalDueIn90Days : totalPubIn90Days;
 
+    let totalOctProposals = 0;
+    let totalOctRemainingLive = 0;
+    let totalOctCompleted = 0;
+
+    Object.keys(dailyMapDue).forEach(d => {
+      if (d.startsWith('2026-10')) {
+        const cnt = dailyMapDue[d]?.tenders?.length || 0;
+        totalOctProposals += cnt;
+        if (d >= todayStr) {
+          totalOctRemainingLive += cnt;
+        } else {
+          totalOctCompleted += cnt;
+        }
+      }
+    });
+
     return {
       dailyMap: activeDailyMap,
       dailyMapDue,
@@ -1896,6 +1914,9 @@ function App() {
       totalIn90Days,
       totalCompletedIn90Days,
       totalPubIn90Days,
+      totalOctProposals,
+      totalOctRemainingLive,
+      totalOctCompleted,
       todayStr,
       sevenDaysAgo,
       thirtyDaysAgo,
@@ -1927,17 +1948,39 @@ function App() {
           // Check if tender submission has already completed (based on today's date)
           const isTenderCompleted = t.is_completed || t.stage === 'closed' || t.status === 'completed' || (t.last_date && t.last_date.slice(0, 10) < calendarData.todayStr);
 
-          // 1. Stage filter & completed tender separation
-          if (stageFilter === 'COMPLETED') {
+          const checkDate = calendarViewMode === 'DUE_DATE' 
+            ? (t.last_date || '').slice(0, 10)
+            : (t.published_date || '').slice(0, 10);
+
+          // 1. Stage filter & completed tender separation & date presets
+          if (dateRangePreset === 'OCTOBER') {
+            // View all October 2026 proposals (both completed and remaining live)
+            if (!checkDate.startsWith('2026-10')) return false;
+            if (stageFilter === 'COMPLETED' && !isTenderCompleted) return false;
+            if (stageFilter === 'LIVE' && isTenderCompleted) return false;
+          } else if (dateRangePreset === 'OCTOBER_REMAINING') {
+            // View remaining live proposals in October 2026 (closing today or 21-31 Oct)
+            if (!checkDate.startsWith('2026-10') || checkDate < calendarData.todayStr) return false;
+          } else if (dateRangePreset === 'OCTOBER_COMPLETED') {
+            // View completed proposals in October 2026 (closed 1-19 Oct)
+            if (!checkDate.startsWith('2026-10') || checkDate >= calendarData.todayStr) return false;
+          } else if (stageFilter === 'COMPLETED') {
             if (!isTenderCompleted) return false;
           } else if (selectedDateFilter) {
             // When user picks a specific date in the 90-day calendar, view tenders for that specific date
-            const checkDate = calendarViewMode === 'DUE_DATE' 
-              ? (t.last_date || '').slice(0, 10)
-              : (t.published_date || '').slice(0, 10);
             if (checkDate !== selectedDateFilter) return false;
+          } else if (dateRangePreset === '7_DAYS' || dateRangePreset === '30_DAYS' || dateRangePreset === '60_DAYS' || dateRangePreset === '90_DAYS') {
+            // Past presets explicitly encompass completed and recent proposals
+            if (dateRangePreset === '7_DAYS' && (checkDate < calendarData.sevenDaysAgo || checkDate > calendarData.todayStr)) return false;
+            if (dateRangePreset === '30_DAYS' && (checkDate < calendarData.thirtyDaysAgo || checkDate > calendarData.todayStr)) return false;
+            if (dateRangePreset === '60_DAYS' && (checkDate < calendarData.sixtyDaysAgo || checkDate > calendarData.todayStr)) return false;
+            if (dateRangePreset === '90_DAYS' && (checkDate < calendarData.ninetyDaysAgo || checkDate > calendarData.todayStr)) return false;
+            if (stageFilter === 'LIVE' && isTenderCompleted) return false;
+            if (stageFilter === 'COMPLETED' && !isTenderCompleted) return false;
+          } else if (dateRangePreset === 'TODAY') {
+            if (checkDate !== calendarData.todayStr) return false;
           } else {
-            // CRITICAL: In all active portal views (ALL, LIVE, UPCOMING, CLOSING_SOON, DOWNLOADED_ONLY),
+            // CRITICAL: In default active portal views (ALL, LIVE, UPCOMING, CLOSING_SOON, DOWNLOADED_ONLY),
             // EXCLUDE completed proposals! Only show active/live proposals based on current date!
             if (isTenderCompleted) return false;
           }
@@ -1947,20 +1990,6 @@ function App() {
           if (stageFilter === 'LIVE' && !t.is_live) return false;
           if (stageFilter === 'UPCOMING' && !t.is_upcoming) return false;
           if (stageFilter === 'CLOSING_SOON' && !t.is_closing_soon) return false;
-
-          // 3. Date Presets (e.g. TODAY, 7_DAYS, etc.)
-          if (!selectedDateFilter && dateRangePreset !== 'ALL') {
-            const checkDate = calendarViewMode === 'DUE_DATE' 
-              ? (t.last_date || '').slice(0, 10)
-              : (t.published_date || '').slice(0, 10);
-            if (dateRangePreset === 'TODAY' && checkDate !== calendarData.todayStr) return false;
-            if (stageFilter !== 'UPCOMING') {
-              if (dateRangePreset === '7_DAYS' && (checkDate < calendarData.sevenDaysAgo || checkDate > calendarData.todayStr)) return false;
-              if (dateRangePreset === '30_DAYS' && (checkDate < calendarData.thirtyDaysAgo || checkDate > calendarData.todayStr)) return false;
-              if (dateRangePreset === '60_DAYS' && (checkDate < calendarData.sixtyDaysAgo || checkDate > calendarData.todayStr)) return false;
-              if (dateRangePreset === '90_DAYS' && (checkDate < calendarData.ninetyDaysAgo || checkDate > calendarData.todayStr)) return false;
-            }
-          }
 
           // 4. Search query match (state, kw, tender_id, title, description, or department)
           if (!q) return true;
@@ -2835,37 +2864,58 @@ function App() {
               All Proposals
             </button>
             <button 
+              className={`calendar-preset-pill october-pill ${!selectedDateFilter && dateRangePreset === 'OCTOBER' ? 'active' : ''}`}
+              onClick={() => { setSelectedDateFilter(null); setDateRangePreset('OCTOBER'); }}
+              title={`View all October 2026 proposals (${calendarData.totalOctProposals} total: ${calendarData.totalOctRemainingLive} live remaining + ${calendarData.totalOctCompleted} completed)`}
+            >
+              📅 October 2026 (All {calendarData.totalOctProposals})
+            </button>
+            <button 
+              className={`calendar-preset-pill october-pill ${!selectedDateFilter && dateRangePreset === 'OCTOBER_REMAINING' ? 'active' : ''}`}
+              onClick={() => { setSelectedDateFilter(null); setDateRangePreset('OCTOBER_REMAINING'); }}
+              title={`View remaining live proposals in October 2026 (${calendarData.totalOctRemainingLive} live active from today to 31 Oct)`}
+            >
+              🟢 Remaining in Oct ({calendarData.totalOctRemainingLive} Live)
+            </button>
+            <button 
+              className={`calendar-preset-pill ${!selectedDateFilter && dateRangePreset === 'OCTOBER_COMPLETED' ? 'active' : ''}`}
+              onClick={() => { setSelectedDateFilter(null); setDateRangePreset('OCTOBER_COMPLETED'); }}
+              title={`View completed proposals in October 2026 (${calendarData.totalOctCompleted} done from 1 to 19 Oct)`}
+            >
+              🏁 Completed in Oct ({calendarData.totalOctCompleted} Done)
+            </button>
+            <button 
               className={`calendar-preset-pill ${!selectedDateFilter && dateRangePreset === 'TODAY' ? 'active' : ''}`}
               onClick={() => { setSelectedDateFilter(null); setDateRangePreset('TODAY'); }}
-              title={`Filter to proposals published today (${formatDateDMY(calendarData.todayStr)})`}
+              title={`Filter to proposals due or published today (${formatDateDMY(calendarData.todayStr)})`}
             >
               📍 Today ({formatDateDMY(calendarData.todayStr)})
             </button>
             <button 
               className={`calendar-preset-pill ${!selectedDateFilter && dateRangePreset === '7_DAYS' ? 'active' : ''}`}
               onClick={() => { setSelectedDateFilter(null); setDateRangePreset('7_DAYS'); }}
-              title={`Filter to proposals published in the past 7 days (${formatDateDMY(calendarData.sevenDaysAgo)} – ${formatDateDMY(calendarData.todayStr)})`}
+              title={`Filter to proposals in the past 7 days (${formatDateDMY(calendarData.sevenDaysAgo)} – ${formatDateDMY(calendarData.todayStr)})`}
             >
               Past 7 Days
             </button>
             <button 
               className={`calendar-preset-pill ${!selectedDateFilter && dateRangePreset === '30_DAYS' ? 'active' : ''}`}
               onClick={() => { setSelectedDateFilter(null); setDateRangePreset('30_DAYS'); }}
-              title={`Filter to proposals published in the past 30 days (${formatDateDMY(calendarData.thirtyDaysAgo)} – ${formatDateDMY(calendarData.todayStr)})`}
+              title={`Filter to proposals in the past 30 days (${formatDateDMY(calendarData.thirtyDaysAgo)} – ${formatDateDMY(calendarData.todayStr)})`}
             >
               Past 30 Days
             </button>
             <button 
               className={`calendar-preset-pill ${!selectedDateFilter && dateRangePreset === '60_DAYS' ? 'active' : ''}`}
               onClick={() => { setSelectedDateFilter(null); setDateRangePreset('60_DAYS'); }}
-              title={`Filter to proposals published in the past 60 days (${formatDateDMY(calendarData.sixtyDaysAgo)} – ${formatDateDMY(calendarData.todayStr)})`}
+              title={`Filter to proposals in the past 60 days (${formatDateDMY(calendarData.sixtyDaysAgo)} – ${formatDateDMY(calendarData.todayStr)})`}
             >
               Past 60 Days
             </button>
             <button 
               className={`calendar-preset-pill ${!selectedDateFilter && dateRangePreset === '90_DAYS' ? 'active' : ''}`}
               onClick={() => { setSelectedDateFilter(null); setDateRangePreset('90_DAYS'); }}
-              title={`Filter to proposals published in the past 90 days (${formatDateDMY(calendarData.ninetyDaysAgo)} – ${formatDateDMY(calendarData.todayStr)})`}
+              title={`Filter to proposals in the past 90 days (${formatDateDMY(calendarData.ninetyDaysAgo)} – ${formatDateDMY(calendarData.todayStr)})`}
             >
               Past 90 Days (3 Months)
             </button>
@@ -2892,12 +2942,15 @@ function App() {
                   Active Timeline Filter: 
                   <span className="banner-pill" style={{ marginLeft: '0.45rem' }}>
                     {selectedDateFilter 
-                      ? `Published on ${formatDateDMY(selectedDateFilter)}`
-                      : (dateRangePreset === 'TODAY' ? `Published Today (${formatDateDMY(calendarData.todayStr)})`
-                        : dateRangePreset === '7_DAYS' ? `Published in Past 7 Days (${formatDateDMY(calendarData.sevenDaysAgo)} – ${formatDateDMY(calendarData.todayStr)})`
-                        : dateRangePreset === '30_DAYS' ? `Published in Past 30 Days (${formatDateDMY(calendarData.thirtyDaysAgo)} – ${formatDateDMY(calendarData.todayStr)})`
-                        : dateRangePreset === '60_DAYS' ? `Published in Past 60 Days (${formatDateDMY(calendarData.sixtyDaysAgo)} – ${formatDateDMY(calendarData.todayStr)})`
-                        : `Published in Past 90 Days (${formatDateDMY(calendarData.ninetyDaysAgo)} – ${formatDateDMY(calendarData.todayStr)})`)}
+                      ? `${calendarViewMode === 'DUE_DATE' ? 'Due / Submission Date' : 'Published on'} ${formatDateDMY(selectedDateFilter)}`
+                      : (dateRangePreset === 'OCTOBER' ? `October 2026 (All ${calendarData.totalOctProposals} Proposals: ${calendarData.totalOctRemainingLive} Remaining Live + ${calendarData.totalOctCompleted} Completed)`
+                        : dateRangePreset === 'OCTOBER_REMAINING' ? `Remaining in October 2026 (${calendarData.totalOctRemainingLive} Live Proposals Due 20–31 Oct 2026)`
+                        : dateRangePreset === 'OCTOBER_COMPLETED' ? `Completed in October 2026 (${calendarData.totalOctCompleted} Proposals Completed 1–19 Oct 2026)`
+                        : dateRangePreset === 'TODAY' ? `Today (${formatDateDMY(calendarData.todayStr)})`
+                        : dateRangePreset === '7_DAYS' ? `Past 7 Days (${formatDateDMY(calendarData.sevenDaysAgo)} – ${formatDateDMY(calendarData.todayStr)})`
+                        : dateRangePreset === '30_DAYS' ? `Past 30 Days (${formatDateDMY(calendarData.thirtyDaysAgo)} – ${formatDateDMY(calendarData.todayStr)})`
+                        : dateRangePreset === '60_DAYS' ? `Past 60 Days (${formatDateDMY(calendarData.sixtyDaysAgo)} – ${formatDateDMY(calendarData.todayStr)})`
+                        : `Past 90 Days (${formatDateDMY(calendarData.ninetyDaysAgo)} – ${formatDateDMY(calendarData.todayStr)})`)}
                   </span>
                 </span>
               </div>
@@ -3742,6 +3795,24 @@ function App() {
                 All Proposals
               </button>
               <button 
+                className={`calendar-preset-pill october-pill ${dateRangePreset === 'OCTOBER' ? 'active' : ''}`}
+                onClick={() => { setDateRangePreset('OCTOBER'); setSelectedDateFilter(null); setCalendarActiveMonth('2026-10'); }}
+              >
+                📅 October 2026 (All {calendarData.totalOctProposals})
+              </button>
+              <button 
+                className={`calendar-preset-pill october-pill ${dateRangePreset === 'OCTOBER_REMAINING' ? 'active' : ''}`}
+                onClick={() => { setDateRangePreset('OCTOBER_REMAINING'); setSelectedDateFilter(null); setCalendarActiveMonth('2026-10'); }}
+              >
+                🟢 Remaining in Oct ({calendarData.totalOctRemainingLive} Live)
+              </button>
+              <button 
+                className={`calendar-preset-pill ${dateRangePreset === 'OCTOBER_COMPLETED' ? 'active' : ''}`}
+                onClick={() => { setDateRangePreset('OCTOBER_COMPLETED'); setSelectedDateFilter(null); setCalendarActiveMonth('2026-10'); }}
+              >
+                🏁 Oct Completed ({calendarData.totalOctCompleted} Done)
+              </button>
+              <button 
                 className={`calendar-preset-pill ${dateRangePreset === 'TODAY' ? 'active' : ''}`}
                 onClick={() => { setDateRangePreset('TODAY'); setSelectedDateFilter(null); setModalSelectedDate(calendarData.todayStr); }}
               >
@@ -3813,7 +3884,7 @@ function App() {
                   const isToday = dayStr === calendarData.todayStr;
                   const isSelected = (modalSelectedDate || calendarData.todayStr) === dayStr;
                   const isPast = dayStr < calendarData.todayStr;
-                  const completedCount = dayData?.completedCount || (isPast && calendarViewMode === 'DUE_DATE' ? count : 0);
+                  const isOctober = dayStr.startsWith('2026-10');
 
                   cells.push(
                     <div 
@@ -3822,13 +3893,19 @@ function App() {
                       onClick={() => {
                         setModalSelectedDate(dayStr);
                       }}
-                      title={`${formatDateDMY(dayStr)}: ${count} proposals ${calendarViewMode === 'DUE_DATE' ? (isPast ? 'completed' : 'due') : 'published'}`}
+                      title={`${formatDateDMY(dayStr)}: ${count} proposals ${calendarViewMode === 'DUE_DATE' ? (isPast ? 'completed' : isToday ? 'due today' : 'open / live') : 'published'}`}
                     >
                       {isToday && <span className="calendar-today-indicator" title="Today"></span>}
                       <span className="calendar-day-number">{dayNum}</span>
                       {count > 0 && (
-                        <span className={`calendar-day-bid-count ${calendarViewMode === 'DUE_DATE' && (isPast || completedCount > 0) ? 'completed-badge' : ''}`}>
-                          {calendarViewMode === 'DUE_DATE' && (isPast || completedCount > 0) ? `🏁 ${count} done` : `${count} bids`}
+                        <span className={`calendar-day-bid-count ${
+                          calendarViewMode === 'DUE_DATE'
+                            ? (isToday ? 'today-badge' : isPast ? 'completed-badge' : isOctober ? 'remaining-badge' : 'live-badge')
+                            : (isToday ? 'today-badge' : '')
+                        }`}>
+                          {calendarViewMode === 'DUE_DATE'
+                            ? (isToday ? `⏰ ${count} today` : isPast ? `🏁 ${count} done` : isOctober ? `🟢 ${count} open` : `⏳ ${count} live`)
+                            : (isToday ? `📢 ${count} today` : `${count} pub`)}
                         </span>
                       )}
                     </div>
@@ -3839,7 +3916,11 @@ function App() {
                   <div key={monthMeta.key} className="calendar-month-card">
                     <div className="calendar-month-header">
                       <span className="calendar-month-title">{monthMeta.name}</span>
-                      <span className="calendar-month-count-badge">{monthTotal} Proposals</span>
+                      <span className="calendar-month-count-badge">
+                        {monthMeta.isCurrentMonth
+                          ? `${monthTotal} Proposals (${calendarData.totalOctRemainingLive} Live Remaining • ${calendarData.totalOctCompleted} Done)`
+                          : `${monthTotal} Proposals`}
+                      </span>
                     </div>
                     <div className="calendar-weekdays-row">
                       <span className="calendar-weekday-cell">Mo</span>
@@ -3877,7 +3958,9 @@ function App() {
                             ? `🏁 Proposals Completed on ${formatDateDMY(activeInspectDate)}`
                             : activeInspectDate === calendarData.todayStr
                               ? `⏰ Proposals Due Today (${formatDateDMY(activeInspectDate)})`
-                              : `⏳ Proposals Due on ${formatDateDMY(activeInspectDate)}`)
+                              : activeInspectDate.startsWith('2026-10')
+                                ? `🟢 Proposals Due on ${formatDateDMY(activeInspectDate)} (Remaining in October - Live Active)`
+                                : `⏳ Proposals Due on ${formatDateDMY(activeInspectDate)}`)
                         : `📢 Proposals Published on ${formatDateDMY(activeInspectDate)}`}
                     </h3>
                   </div>
@@ -6822,6 +6905,24 @@ function App() {
                     All Proposals
                   </button>
                   <button 
+                    className={`calendar-preset-pill october-pill ${dateRangePreset === 'OCTOBER' ? 'active' : ''}`}
+                    onClick={() => { setDateRangePreset('OCTOBER'); setSelectedDateFilter(null); setCalendarActiveMonth('2026-10'); }}
+                  >
+                    📅 October 2026 (All {calendarData.totalOctProposals})
+                  </button>
+                  <button 
+                    className={`calendar-preset-pill october-pill ${dateRangePreset === 'OCTOBER_REMAINING' ? 'active' : ''}`}
+                    onClick={() => { setDateRangePreset('OCTOBER_REMAINING'); setSelectedDateFilter(null); setCalendarActiveMonth('2026-10'); }}
+                  >
+                    🟢 Remaining in Oct ({calendarData.totalOctRemainingLive} Live)
+                  </button>
+                  <button 
+                    className={`calendar-preset-pill ${dateRangePreset === 'OCTOBER_COMPLETED' ? 'active' : ''}`}
+                    onClick={() => { setDateRangePreset('OCTOBER_COMPLETED'); setSelectedDateFilter(null); setCalendarActiveMonth('2026-10'); }}
+                  >
+                    🏁 Oct Completed ({calendarData.totalOctCompleted} Done)
+                  </button>
+                  <button 
                     className={`calendar-preset-pill ${dateRangePreset === 'TODAY' ? 'active' : ''}`}
                     onClick={() => { setDateRangePreset('TODAY'); setSelectedDateFilter(null); setModalSelectedDate(calendarData.todayStr); }}
                   >
@@ -6896,7 +6997,7 @@ function App() {
                       const isToday = dayStr === calendarData.todayStr;
                       const isSelected = (modalSelectedDate || calendarData.todayStr) === dayStr;
                       const isPast = dayStr < calendarData.todayStr;
-                      const completedCount = dayData?.completedCount || (isPast && calendarViewMode === 'DUE_DATE' ? count : 0);
+                      const isOctober = dayStr.startsWith('2026-10');
 
                       cells.push(
                         <div 
@@ -6905,13 +7006,19 @@ function App() {
                           onClick={() => {
                             setModalSelectedDate(dayStr);
                           }}
-                          title={`${formatDateDMY(dayStr)}: ${count} proposals ${calendarViewMode === 'DUE_DATE' ? (isPast ? 'completed' : 'due') : 'published'}`}
+                          title={`${formatDateDMY(dayStr)}: ${count} proposals ${calendarViewMode === 'DUE_DATE' ? (isPast ? 'completed' : isToday ? 'due today' : 'open / live') : 'published'}`}
                         >
                           {isToday && <span className="calendar-today-indicator" title="Today"></span>}
                           <span className="calendar-day-number">{dayNum}</span>
                           {count > 0 && (
-                            <span className={`calendar-day-bid-count ${calendarViewMode === 'DUE_DATE' && (isPast || completedCount > 0) ? 'completed-badge' : ''}`}>
-                              {calendarViewMode === 'DUE_DATE' && (isPast || completedCount > 0) ? `🏁 ${count} done` : `${count} bids`}
+                            <span className={`calendar-day-bid-count ${
+                              calendarViewMode === 'DUE_DATE'
+                                ? (isToday ? 'today-badge' : isPast ? 'completed-badge' : isOctober ? 'remaining-badge' : 'live-badge')
+                                : (isToday ? 'today-badge' : '')
+                            }`}>
+                              {calendarViewMode === 'DUE_DATE'
+                                ? (isToday ? `⏰ ${count} today` : isPast ? `🏁 ${count} done` : isOctober ? `🟢 ${count} open` : `⏳ ${count} live`)
+                                : (isToday ? `📢 ${count} today` : `${count} pub`)}
                             </span>
                           )}
                         </div>
@@ -6922,7 +7029,11 @@ function App() {
                       <div key={monthMeta.key} className="calendar-month-card">
                         <div className="calendar-month-header">
                           <span className="calendar-month-title">{monthMeta.name}</span>
-                          <span className="calendar-month-count-badge">{monthTotal} Proposals</span>
+                          <span className="calendar-month-count-badge">
+                            {monthMeta.isCurrentMonth
+                              ? `${monthTotal} Proposals (${calendarData.totalOctRemainingLive} Live Remaining • ${calendarData.totalOctCompleted} Done)`
+                              : `${monthTotal} Proposals`}
+                          </span>
                         </div>
                         <div className="calendar-weekdays-row">
                           <span className="calendar-weekday-cell">Mo</span>
@@ -6960,7 +7071,9 @@ function App() {
                                 ? `🏁 Proposals Completed on ${formatDateDMY(activeInspectDate)}`
                                 : activeInspectDate === calendarData.todayStr
                                   ? `⏰ Proposals Due Today (${formatDateDMY(activeInspectDate)})`
-                                  : `⏳ Proposals Due on ${formatDateDMY(activeInspectDate)}`)
+                                  : activeInspectDate.startsWith('2026-10')
+                                    ? `🟢 Proposals Due on ${formatDateDMY(activeInspectDate)} (Remaining in October - Live Active)`
+                                    : `⏳ Proposals Due on ${formatDateDMY(activeInspectDate)}`)
                             : `📢 Proposals Published on ${formatDateDMY(activeInspectDate)}`}
                         </h3>
                       </div>

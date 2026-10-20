@@ -2731,6 +2731,41 @@ body::after {
   border: 1px solid rgba(148, 163, 184, 0.4);
 }
 
+.calendar-day-bid-count.today-badge {
+  background: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+  font-weight: 800;
+}
+
+.calendar-day-bid-count.remaining-badge {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #86efac;
+  font-weight: 700;
+}
+
+.calendar-day-bid-count.live-badge {
+  background: #e0e7ff;
+  color: #4338ca;
+  border: 1px solid #c7d2fe;
+  font-weight: 700;
+}
+
+.calendar-preset-pill.october-pill {
+  background: #f0fdf4;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+  font-weight: 700;
+}
+
+.calendar-preset-pill.october-pill.active {
+  background: #166534;
+  color: #ffffff;
+  border-color: #166534;
+  box-shadow: 0 2px 6px rgba(22, 101, 52, 0.25);
+}
+
 .calendar-mode-toggle-group {
   display: flex;
   align-items: center;
