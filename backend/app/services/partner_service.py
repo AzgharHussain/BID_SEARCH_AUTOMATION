@@ -1710,7 +1710,15 @@ def send_collaboration_outreach_email(
 
     subject = f"[Consortium / JV Opportunity] Tender #{tender.tender_id} - {state_name}: Collaboration with GISFY"
 
-    letter_text = f"""CONFIDENTIAL & PRIVILEGED — LETTER OF INTENT FOR CONSORTIUM / JOINT VENTURE
+    letter_text = f"""================================================================================
+🛡️ TEST & CONTENT VERIFICATION COPY — ORIGINAL CLIENT EMAIL SHIELDED
+Reviewer Deliveries: swethanjali@gisfy.co.in, swethagisfy@gmail.com
+Intended Collaboration Partner: {partner.name}
+Partner Email (Shielded in Test Mode): {partner.email or 'N/A'}
+Status: Pre-approval test mode (No external emails sent to partner)
+================================================================================
+
+CONFIDENTIAL & PRIVILEGED — LETTER OF INTENT FOR CONSORTIUM / JOINT VENTURE
 
 Date: {datetime.utcnow().strftime('%d %B %Y')}
 
@@ -1719,13 +1727,13 @@ To:
 {partner.designation or 'Director - Govt Tenders & Partnerships'}
 {partner.name}
 {partner.city or ''}, {partner.state or 'India'}
-Email: {partner.email or 'N/A'} | Phone: {partner.phone or 'N/A'}
+Email: {partner.email or 'N/A'} [SHIELDED IN TEST MODE] | Phone: {partner.phone or 'N/A'}
 
 From:
-{payload.gisfy_contact_name}
+Swethanjali / Swetha (GISFY Proposals Directorate)
 GISFY (Spatial Intelligence & Automated Proposals Directorate)
 Hyderabad, India
-Email: {payload.gisfy_contact_email} | Web: https://gisfy.co.in
+Email: swethanjali@gisfy.co.in | Web: https://gisfy.co.in
 
 Subject: Invitation for Joint Venture / Consortium Bidding for Tender Ref #{tender.tender_id}
 Tender Title: {tender.title}
@@ -1756,9 +1764,9 @@ Please confirm your availability and interest by replying directly to this commu
 
 Warm regards,
 
-{payload.gisfy_contact_name}
+Swethanjali / Swetha
 GISFY Tendering & Strategic Alliances Division
-Email: {payload.gisfy_contact_email}
+Email: swethanjali@gisfy.co.in / swethagisfy@gmail.com
 """
 
     html_content = build_collaboration_email_html(
@@ -1768,15 +1776,21 @@ Email: {payload.gisfy_contact_email}
         letter_text=letter_text,
         jv_split=payload.proposed_jv_split or "60% GISFY : 40% Specialized Partner",
         custom_notes=payload.custom_message,
-        gisfy_name=payload.gisfy_contact_name or "Swetha (GISFY)",
-        gisfy_email=payload.gisfy_contact_email or "swethagisfy@gmail.com"
+        gisfy_name="Swethanjali / Swetha (GISFY)",
+        gisfy_email="swethanjali@gisfy.co.in"
     )
 
-    recipients = list(payload.recipients or ["swethagisfy@gmail.com"])
-    if "swethagisfy@gmail.com" not in [r.lower() for r in recipients]:
-        recipients.insert(0, "swethagisfy@gmail.com")
-    if partner.email and partner.email not in recipients:
-        recipients.append(partner.email)
+    # STRICT SAFEGUARD: Send only to swethanjali@gisfy.co.in and swethagisfy@gmail.com for initial verification
+    # External partner email is shielded and NEVER sent until user approval
+    SAFE_RECIPIENTS = ["swethanjali@gisfy.co.in", "swethagisfy@gmail.com"]
+    recipients = list(SAFE_RECIPIENTS)
+
+    # If payload provided other gisfy internal emails, keep them; strip all external client/partner emails
+    for r in payload.recipients or []:
+        r_clean = r.strip()
+        if r_clean and ("@gisfy.co.in" in r_clean.lower() or "swethagisfy" in r_clean.lower()):
+            if r_clean.lower() not in [x.lower() for x in recipients]:
+                recipients.append(r_clean)
 
     dispatch_res = _dispatch_html_email(
         recipients=recipients,
@@ -1784,7 +1798,7 @@ Email: {payload.gisfy_contact_email}
         html_content=html_content,
         state_name=state_name,
         tender_id=str(tender.tender_id),
-        event_prefix="COLLABORATION OUTREACH EMAIL"
+        event_prefix="COLLABORATION TEST EMAIL [SHIELDED]"
     )
 
     update_tender_collaboration(
@@ -1792,13 +1806,16 @@ Email: {payload.gisfy_contact_email}
         tender.id,
         partner.id,
         status="Outreach Sent",
-        notes=f"Dispatched LOI to {', '.join(recipients)} on {datetime.utcnow().strftime('%d %b %Y %H:%M')}"
+        notes=f"Test LOI dispatched to {', '.join(recipients)} (Client {partner.name} shielded) on {datetime.utcnow().strftime('%d %b %Y %H:%M')}"
     )
 
     return {
         "status": "success",
         "delivery_mode": dispatch_res.get("delivery_mode"),
         "recipients": recipients,
+        "shielded_partner_name": partner.name,
+        "shielded_partner_email": partner.email,
+        "test_mode": True,
         "subject": subject,
         "tender_id": str(tender.tender_id),
         "tender_title": tender.title,
@@ -1809,7 +1826,8 @@ Email: {payload.gisfy_contact_email}
         "preview_file": dispatch_res.get("preview_file"),
         "sent_at": dispatch_res.get("sent_at"),
         "proposal_letter": letter_text,
-        "collaboration_status": "Outreach Sent"
+        "collaboration_status": "Outreach Sent",
+        "message": "Dispatched securely to swethanjali@gisfy.co.in and swethagisfy@gmail.com. Original client email is safely shielded."
     }
 
 

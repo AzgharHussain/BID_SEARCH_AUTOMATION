@@ -20,6 +20,7 @@ SENT_EMAILS_DIR = BASE_DIR / "storage" / "sent_emails"
 LOG_FILE = BASE_DIR / "scraper.log"
 
 DEFAULT_TEAM_MEMBERS = [
+    {"email": "swethanjali@gisfy.co.in", "name": "Swethanjali (GISFY)", "role": "Executive Lead & Verifier", "added_at": "2026-10-20T21:55:00"},
     {"email": "swethagisfy@gmail.com", "name": "Swetha (GISFY)", "role": "Executive Reviewer & Lead", "added_at": "2026-10-16T15:47:00"},
     {"email": "proposals-team@gisfy.co.in", "name": "GISFY Proposals Team", "role": "Bidding Team", "added_at": "2026-10-15T12:00:00"},
     {"email": "tenders@gisfy.co.in", "name": "GISFY Tender Ops", "role": "Procurement Lead", "added_at": "2026-10-15T12:00:00"},
@@ -904,9 +905,23 @@ def build_collaboration_email_html(
                             </td>
                         </tr>
 
+                        <!-- Test & Content Verification Shield Banner -->
+                        <tr>
+                            <td style="padding: 16px 36px 0 36px;">
+                                <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 12px 18px; color: #92400e; font-size: 12px; line-height: 1.5;">
+                                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                                        <span style="font-weight: 800; font-size: 13px; color: #78350f;">🛡️ TEST &amp; DESIGN VERIFICATION COPY — CLIENT SHIELDED</span>
+                                        <span style="background: #f59e0b; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-weight: 800; font-size: 10px; text-transform: uppercase;">Internal Review</span>
+                                    </div>
+                                    <div>This collaboration proposal was securely delivered to <b>swethanjali@gisfy.co.in</b> and <b>swethagisfy@gmail.com</b> for layout, content, and JV terms approval.</div>
+                                    <div style="margin-top: 4px; color: #b45309; font-weight: 600;">🔒 External partner (<b>{partner.name}</b> &lt;{partner.email or 'N/A'}&gt;) is protected and received NO external emails.</div>
+                                </div>
+                            </td>
+                        </tr>
+
                         <!-- Summary Cards -->
                         <tr>
-                            <td style="padding: 24px 36px 0 36px;">
+                            <td style="padding: 20px 36px 0 36px;">
                                 <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 20px;">
                                     <tr>
                                         <td width="48%" style="vertical-align: top; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px;">

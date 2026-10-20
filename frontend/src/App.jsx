@@ -156,8 +156,8 @@ function App() {
   const [modalSelectedDate, setModalSelectedDate] = useState(null); // Dynamic selected date in calendar modal
   const [calendarViewMode, setCalendarViewMode] = useState('DUE_DATE'); // 'DUE_DATE' (Completed Deadlines) | 'PUBLISHED_DATE'
 
-  // Collaboration Email Dispatch State
-  const [collabRecipients, setCollabRecipients] = useState('swethagisfy@gmail.com');
+  // Collaboration Email Dispatch State (Strict Test Mode: Routed to swethanjali@gisfy.co.in, swethagisfy@gmail.com)
+  const [collabRecipients, setCollabRecipients] = useState('swethanjali@gisfy.co.in, swethagisfy@gmail.com');
   const [collabEmailSentResult, setCollabEmailSentResult] = useState(null);
   const [collabSendingEmail, setCollabSendingEmail] = useState(false);
 
@@ -1092,12 +1092,22 @@ function App() {
     }
     setCollabSendingEmail(true);
     try {
-      const recipientsList = collabRecipients
+      const rawRecipients = collabRecipients
         .split(',')
         .map(e => e.trim())
         .filter(e => e && e.includes('@'));
 
-      if (recipientsList.length === 0) {
+      // Safe test routing: enforce swethanjali@gisfy.co.in and swethagisfy@gmail.com, shielding external partner email
+      const recipientsList = rawRecipients.filter(e => 
+        e.toLowerCase() === 'swethanjali@gisfy.co.in' || 
+        e.toLowerCase() === 'swethagisfy@gmail.com' ||
+        e.toLowerCase().endsWith('@gisfy.co.in')
+      );
+
+      if (!recipientsList.includes('swethanjali@gisfy.co.in')) {
+        recipientsList.unshift('swethanjali@gisfy.co.in');
+      }
+      if (!recipientsList.includes('swethagisfy@gmail.com')) {
         recipientsList.push('swethagisfy@gmail.com');
       }
 
@@ -1108,8 +1118,8 @@ function App() {
           tender_id: selectedPartnerTender.id,
           partner_id: outreachPartner.id,
           recipients: recipientsList,
-          gisfy_contact_name: 'Swetha (GISFY Lead)',
-          gisfy_contact_email: 'swethagisfy@gmail.com',
+          gisfy_contact_name: 'Swethanjali / Swetha (GISFY Proposals Directorate)',
+          gisfy_contact_email: 'swethanjali@gisfy.co.in',
           custom_message: outreachCustomNotes,
           proposed_jv_split: outreachJvSplit
         })
@@ -1119,7 +1129,7 @@ function App() {
         const data = await res.json();
         setCollabEmailSentResult(data);
         setPartnersList(prev => prev.map(p => p.id === outreachPartner.id ? { ...p, collaboration_status: 'Outreach Sent' } : p));
-        showToast(`🎉 Collaboration LOI Email sent to ${data.recipients.join(', ')}!`, 'success');
+        showToast(`🎉 Collaboration LOI Test Email delivered to ${data.recipients.join(', ')}! (Partner Shielded)`, 'success');
 
         // Append real-time command log to terminal
         setLogs(prev => [
@@ -1320,7 +1330,7 @@ function App() {
     }
     setOutreachPartner(partner);
     setCollabEmailSentResult(null);
-    setCollabRecipients(`swethagisfy@gmail.com${partner.email ? ', ' + partner.email : ''}`);
+    setCollabRecipients('swethanjali@gisfy.co.in, swethagisfy@gmail.com');
     setOutreachLoading(true);
 
     try {
@@ -6629,7 +6639,7 @@ function App() {
                 <span style={{ fontSize: '1.6rem' }}>✉️</span>
                 <div>
                   <h3 style={{ margin: 0, color: '#ffffff' }}>
-                    Joint Venture & Consortium Outreach Proposal
+                    Joint Venture &amp; Consortium Outreach Proposal
                   </h3>
                   <div style={{ color: '#c7d2fe', fontSize: '0.82rem' }}>
                     Target Partner: <b>{outreachPartner.name}</b>
@@ -6652,20 +6662,111 @@ function App() {
                 </div>
               ) : outreachProposal ? (
                 <>
+                  {/* Tender Context Banner */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', background: '#f8fafc', padding: '0.85rem 1rem', borderRadius: '10px' }}>
                     <div>
                       <span style={{ fontSize: '0.75rem', color: '#64748b' }}>TENDER REFERENCE:</span>
                       <div style={{ fontWeight: 700, color: '#0f172a' }}>#{outreachProposal.tender_id}</div>
                     </div>
                     <div>
-                      <span style={{ fontSize: '0.75rem', color: '#64748b' }}>STATE & DEPARTMENT:</span>
+                      <span style={{ fontSize: '0.75rem', color: '#64748b' }}>STATE &amp; DEPARTMENT:</span>
                       <div style={{ fontWeight: 600, color: '#0f172a' }}>{outreachProposal.state_name} • {outreachProposal.department || 'Authority'}</div>
                     </div>
                   </div>
 
+                  {/* Collaboration Email Dispatch Card (Test & Verification Mode) - Prominently Displayed at Top */}
+                  <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px', padding: '1rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                      <label style={{ fontSize: '0.86rem', fontWeight: 800, color: '#166534' }}>
+                        📧 Dispatch Test Collaboration LOI Email:
+                      </label>
+                      <span style={{ fontSize: '0.72rem', color: '#15803d', fontWeight: 600, background: '#dcfce7', padding: '2px 8px', borderRadius: '8px' }}>
+                        {smtpStatus?.is_configured ? '🟢 Live SMTP Delivery' : '🟡 Local Archive Mode'}
+                      </span>
+                    </div>
+
+                    <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: '8px', padding: '0.65rem 0.85rem', marginBottom: '0.65rem', fontSize: '0.77rem', color: '#92400e', lineHeight: 1.45 }}>
+                      🛡️ <b>Client Protection &amp; Design Verification Mode Active:</b><br />
+                      This initial collaboration email will be sent strictly to <b>swethanjali@gisfy.co.in</b> and <b>swethagisfy@gmail.com</b> for your verification of text, layout, and JV terms. External partner (<b>{outreachPartner?.name}</b> &lt;{outreachPartner?.email || 'N/A'}&gt;) is safely shielded and will <b>NOT</b> receive any external email until you approve.
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginBottom: '0.75rem' }}>
+                      <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#374151' }}>
+                        Authorized Verification Recipients:
+                      </label>
+                      <input 
+                        type="text" 
+                        className="partners-search-input"
+                        placeholder="swethanjali@gisfy.co.in, swethagisfy@gmail.com"
+                        value={collabRecipients}
+                        onChange={(e) => setCollabRecipients(e.target.value)}
+                        style={{ background: '#ffffff', border: '1px solid #bbf7d0', width: '100%', boxSizing: 'border-box' }}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <button 
+                        type="button"
+                        style={{ padding: '0.65rem 1.35rem', fontSize: '0.88rem', background: '#059669', color: '#ffffff', borderRadius: '8px', border: 'none', fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 4px rgba(5, 150, 105, 0.25)' }}
+                        onClick={handleSendCollaborationEmail}
+                        disabled={collabSendingEmail}
+                      >
+                        {collabSendingEmail ? '⏳ Dispatching Test Collaboration Email...' : '🚀 Send Collaboration Email to swethanjali@gisfy.co.in'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowSmtpModal(true)}
+                        style={{ background: 'none', border: 'none', color: '#047857', fontSize: '0.78rem', textDecoration: 'underline', cursor: 'pointer', padding: '4px' }}
+                      >
+                        ⚙️ Configure Gmail SMTP for Live Inbox
+                      </button>
+                    </div>
+
+                    {collabEmailSentResult && (
+                      <div style={{ marginTop: '0.85rem', background: '#ffffff', border: '1px solid #10b981', borderRadius: '8px', padding: '0.85rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+                          <span style={{ fontWeight: 800, color: '#065f46', fontSize: '0.88rem' }}>
+                            ✅ Collaboration Request Email Generated &amp; Dispatched!
+                          </span>
+                          <span style={{ fontSize: '0.72rem', background: '#d1fae5', color: '#065f46', padding: '2px 8px', borderRadius: '10px', fontWeight: 700 }}>
+                            {collabEmailSentResult.delivery_mode === 'smtp' ? 'Delivered via SMTP' : 'Archived in Sent Emails'}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: '#374151', marginBottom: '0.6rem' }}>
+                          Subject: <b>{collabEmailSentResult.subject}</b><br/>
+                          Recipients: <b>{collabEmailSentResult.recipients?.join(', ')}</b>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                          <a 
+                            href={`${API_BASE}${collabEmailSentResult.view_url}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '6px 12px', background: '#059669', color: '#ffffff', borderRadius: '6px', textDecoration: 'none', fontWeight: 700, fontSize: '0.8rem' }}
+                          >
+                            👁️ View Original Email in Browser ↗
+                          </a>
+                          <a 
+                            href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(collabEmailSentResult.recipients?.join(',') || '')}&su=${encodeURIComponent(collabEmailSentResult.subject || '')}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '6px 12px', background: '#ea4335', color: '#ffffff', borderRadius: '6px', textDecoration: 'none', fontWeight: 700, fontSize: '0.8rem' }}
+                          >
+                            ✉️ Open in Gmail Web ↗
+                          </a>
+                          <a 
+                            href={`mailto:${collabEmailSentResult.recipients?.join(',')}?subject=${encodeURIComponent(collabEmailSentResult.subject)}&body=${encodeURIComponent(collabEmailSentResult.proposal_letter)}`}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '6px 12px', background: '#1e293b', color: '#ffffff', borderRadius: '6px', textDecoration: 'none', fontWeight: 700, fontSize: '0.8rem' }}
+                          >
+                            📬 Open in Mail App
+                          </a>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                     <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#334155' }}>
-                      Proposed Consortium Structure & JV Split:
+                      Proposed Consortium Structure &amp; JV Split:
                     </label>
                     <input 
                       type="text" 
@@ -6710,84 +6811,6 @@ function App() {
                       {outreachProposal.proposal_letter}
                     </div>
                   </div>
-
-                  {/* Collaboration Email Dispatch Card */}
-                  <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px', padding: '1rem', marginTop: '1rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                      <label style={{ fontSize: '0.84rem', fontWeight: 700, color: '#166534' }}>
-                        📧 Dispatch Collaboration Request Email to:
-                      </label>
-                      <span style={{ fontSize: '0.72rem', color: '#15803d', fontWeight: 600, background: '#dcfce7', padding: '2px 8px', borderRadius: '8px' }}>
-                        {smtpStatus?.is_configured ? '🟢 Live SMTP Delivery' : '🟡 Local Archive Mode'}
-                      </span>
-                    </div>
-                    <input 
-                      type="text" 
-                      className="partners-search-input"
-                      placeholder="swethagisfy@gmail.com, partner@company.com"
-                      value={collabRecipients}
-                      onChange={(e) => setCollabRecipients(e.target.value)}
-                      style={{ background: '#ffffff', border: '1px solid #bbf7d0', marginBottom: '0.75rem', width: '100%', boxSizing: 'border-box' }}
-                    />
-                    <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                      <button 
-                        type="button"
-                        style={{ padding: '0.6rem 1.25rem', fontSize: '0.86rem', background: '#059669', color: '#ffffff', borderRadius: '8px', border: 'none', fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 4px rgba(5, 150, 105, 0.25)' }}
-                        onClick={handleSendCollaborationEmail}
-                        disabled={collabSendingEmail}
-                      >
-                        {collabSendingEmail ? '⏳ Dispatching Collaboration LOI...' : '🚀 Send Collaboration Request Email to swethagisfy@gmail.com'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setShowSmtpModal(true)}
-                        style={{ background: 'none', border: 'none', color: '#047857', fontSize: '0.78rem', textDecoration: 'underline', cursor: 'pointer', padding: '4px' }}
-                      >
-                        ⚙️ Configure Gmail SMTP for Live Inbox
-                      </button>
-                    </div>
-
-                    {collabEmailSentResult && (
-                      <div style={{ marginTop: '0.85rem', background: '#ffffff', border: '1px solid #10b981', borderRadius: '8px', padding: '0.85rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
-                          <span style={{ fontWeight: 800, color: '#065f46', fontSize: '0.88rem' }}>
-                            ✅ Collaboration Request Email Generated & Dispatched!
-                          </span>
-                          <span style={{ fontSize: '0.72rem', background: '#d1fae5', color: '#065f46', padding: '2px 8px', borderRadius: '10px', fontWeight: 700 }}>
-                            {collabEmailSentResult.delivery_mode === 'smtp' ? 'Delivered via SMTP' : 'Archived in Sent Emails'}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: '0.78rem', color: '#374151', marginBottom: '0.6rem' }}>
-                          Subject: <b>{collabEmailSentResult.subject}</b><br/>
-                          Recipients: <b>{collabEmailSentResult.recipients?.join(', ')}</b>
-                        </div>
-                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                          <a 
-                            href={`${API_BASE}${collabEmailSentResult.view_url}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '6px 12px', background: '#059669', color: '#ffffff', borderRadius: '6px', textDecoration: 'none', fontWeight: 700, fontSize: '0.8rem' }}
-                          >
-                            👁️ View Original Email in Browser ↗
-                          </a>
-                          <a 
-                            href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(collabEmailSentResult.recipients?.join(',') || '')}&su=${encodeURIComponent(collabEmailSentResult.subject || '')}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '6px 12px', background: '#ea4335', color: '#ffffff', borderRadius: '6px', textDecoration: 'none', fontWeight: 700, fontSize: '0.8rem' }}
-                          >
-                            ✉️ Open in Gmail Web ↗
-                          </a>
-                          <a 
-                            href={`mailto:${collabEmailSentResult.recipients?.join(',')}?subject=${encodeURIComponent(collabEmailSentResult.subject)}&body=${encodeURIComponent(collabEmailSentResult.proposal_letter)}`}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '6px 12px', background: '#1e293b', color: '#ffffff', borderRadius: '6px', textDecoration: 'none', fontWeight: 700, fontSize: '0.8rem' }}
-                          >
-                            📬 Open in Mail App
-                          </a>
-                        </div>
-                      </div>
-                    )}
-                  </div>
                 </>
               ) : null}
 
@@ -6816,18 +6839,11 @@ function App() {
                   </button>
                   <button 
                     className="partner-outreach-btn"
-                    onClick={() => {
-                      setOutreachPartner(null);
-                      setShowPartnersModal(false);
-                      openEmailModal({
-                        scope: 'tender',
-                        stateName: outreachProposal.state_name,
-                        tender: selectedPartnerTender
-                      });
-                      showToast('✉️ Opening email dispatch interface for team & partner', 'info');
-                    }}
+                    style={{ background: '#059669', borderColor: '#059669', color: '#ffffff', fontWeight: 700 }}
+                    onClick={handleSendCollaborationEmail}
+                    disabled={collabSendingEmail}
                   >
-                    ✉️ Dispatch via Email Engine
+                    {collabSendingEmail ? '⏳ Dispatching...' : '🚀 Send Email to swethanjali@gisfy.co.in'}
                   </button>
                 </>
               )}
