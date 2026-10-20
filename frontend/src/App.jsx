@@ -1924,13 +1924,32 @@ function App() {
         const kwMatch = !q || kw.keyword.toLowerCase().includes(q);
 
         const tenders = kw.tenders.filter(t => {
-          // Date Filter (90-Day Calendar & Presets)
-          if (selectedDateFilter) {
+          // Check if tender submission has already completed (based on today's date)
+          const isTenderCompleted = t.is_completed || t.stage === 'closed' || t.status === 'completed' || (t.last_date && t.last_date.slice(0, 10) < calendarData.todayStr);
+
+          // 1. Stage filter & completed tender separation
+          if (stageFilter === 'COMPLETED') {
+            if (!isTenderCompleted) return false;
+          } else if (selectedDateFilter) {
+            // When user picks a specific date in the 90-day calendar, view tenders for that specific date
             const checkDate = calendarViewMode === 'DUE_DATE' 
               ? (t.last_date || '').slice(0, 10)
               : (t.published_date || '').slice(0, 10);
             if (checkDate !== selectedDateFilter) return false;
-          } else if (dateRangePreset !== 'ALL') {
+          } else {
+            // CRITICAL: In all active portal views (ALL, LIVE, UPCOMING, CLOSING_SOON, DOWNLOADED_ONLY),
+            // EXCLUDE completed proposals! Only show active/live proposals based on current date!
+            if (isTenderCompleted) return false;
+          }
+
+          // 2. Specific active stage filters
+          if (stageFilter === 'DOWNLOADED_ONLY' && !t.documents.some(d => d.is_downloaded || d.download_status === 'downloaded')) return false;
+          if (stageFilter === 'LIVE' && !t.is_live) return false;
+          if (stageFilter === 'UPCOMING' && !t.is_upcoming) return false;
+          if (stageFilter === 'CLOSING_SOON' && !t.is_closing_soon) return false;
+
+          // 3. Date Presets (e.g. TODAY, 7_DAYS, etc.)
+          if (!selectedDateFilter && dateRangePreset !== 'ALL') {
             const checkDate = calendarViewMode === 'DUE_DATE' 
               ? (t.last_date || '').slice(0, 10)
               : (t.published_date || '').slice(0, 10);
@@ -1943,14 +1962,7 @@ function App() {
             }
           }
 
-          // Stage filter
-          if (stageFilter === 'DOWNLOADED_ONLY' && !t.documents.some(d => d.is_downloaded || d.download_status === 'downloaded')) return false;
-          if (stageFilter === 'LIVE' && !t.is_live) return false;
-          if (stageFilter === 'UPCOMING' && !t.is_upcoming) return false;
-          if (stageFilter === 'CLOSING_SOON' && !t.is_closing_soon) return false;
-          if (stageFilter === 'COMPLETED' && !(t.is_completed || t.stage === 'closed' || t.status === 'completed')) return false;
-
-          // Search query match (state, kw, tender_id, title, description, or department)
+          // 4. Search query match (state, kw, tender_id, title, description, or department)
           if (!q) return true;
           if (stateNameMatch || kwMatch) return true;
           const titleMatch = (t.title || '').toLowerCase().includes(q);
@@ -2042,6 +2054,7 @@ function App() {
 
   const totalDocsCount = allUniqueDocIds.size;
   const downloadedDocsCount = downloadedUniqueDocIds.size;
+  const activeBidsCount = liveActiveCount + upcomingCount;
 
   // Interactive BASH Command Execution for Agent Terminal
   const handleRunTerminalCommand = (cmdText) => {
@@ -2206,7 +2219,7 @@ function App() {
           >
             <span className="nav-tab-icon">📑</span>
             <span>Proposals & States</span>
-            <span className="nav-tab-badge">{totalTenders}</span>
+            <span className="nav-tab-badge">{activeBidsCount}</span>
           </button>
 
           <button 
@@ -2378,11 +2391,11 @@ function App() {
               className={`stat-card ${stageFilter === 'ALL' ? 'active-stat-card' : ''}`}
               onClick={() => handleSelectStage('ALL')}
               style={{ cursor: 'pointer' }}
-              title="Click to view all proposals across 29 states"
+              title="Click to view all active proposals across 29 states"
             >
               <div className="stat-label">States Monitored</div>
               <div className="stat-value">{totalStates}</div>
-              <div className="stat-sub">Across 29 Indian States & UTs (All)</div>
+              <div className="stat-sub">{activeBidsCount} Active Bids Across 29 States</div>
             </div>
             <div 
               className={`stat-card stat-live ${stageFilter === 'LIVE' ? 'active-stat-card' : ''}`}
@@ -2422,7 +2435,7 @@ function App() {
             >
               <div className="stat-label">🏁 Completed Proposals</div>
               <div className="stat-value muted">{completedCount}</div>
-              <div className="stat-sub">Deadline Expired (90-Day History)</div>
+              <div className="stat-sub">{completedCount} in 90-Day Calendar & Archive</div>
             </div>
             <div 
               className={`stat-card ${stageFilter === 'DOWNLOADED_ONLY' ? 'active-stat-card' : ''}`}
@@ -2451,10 +2464,10 @@ function App() {
             className={`state-pill-btn ${selectedState === null ? 'active' : ''}`}
             onClick={() => { setSelectedState(null); setSelectedSidebarKw(null); }}
           >
-            🌐 All 29 States <span className="state-pill-count">{totalTenders}</span>
+            🌐 All 29 States <span className="state-pill-count">{activeBidsCount}</span>
           </button>
           {allStateNames.map((stName, idx) => {
-            const stObj = reportData.find(s => s.state_name === stName);
+            const stObj = filteredReportData.find(s => s && s.state_name === stName);
             const stCount = stObj ? stObj.keywords.reduce((acc, kw) => acc + kw.tenders.length, 0) : 0;
             return (
               <button 
@@ -2772,7 +2785,7 @@ function App() {
               className={`stage-tab ${stageFilter === 'ALL' ? 'active' : ''}`}
               onClick={() => handleSelectStage('ALL')}
             >
-              🌐 All Proposals ({totalTenders})
+              🌐 All Active Proposals ({activeBidsCount})
             </button>
             <button 
               className={`stage-tab ${stageFilter === 'DOWNLOADED_ONLY' ? 'active' : ''}`}
