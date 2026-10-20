@@ -2693,6 +2693,72 @@ body::after {
   animation: subtleBlink 2s infinite;
 }
 
+.stage-pill.completed,
+.stage-pill.closed {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+
+.stage-tab.completed {
+  border-color: #94a3b8;
+  color: #64748b;
+}
+
+.stage-tab.completed.active {
+  background: #475569;
+  color: #ffffff;
+  border-color: #334155;
+  box-shadow: 0 2px 6px rgba(71, 85, 105, 0.3);
+}
+
+.stat-card.stat-completed {
+  border-top: 3px solid #94a3b8;
+}
+
+.stat-card.stat-completed .stat-value.muted {
+  color: #64748b;
+}
+
+.tender-item.tender-completed {
+  border-left: 3px solid #94a3b8;
+  background: rgba(248, 250, 252, 0.6);
+}
+
+.calendar-day-bid-count.completed-badge {
+  background: rgba(148, 163, 184, 0.2);
+  color: #475569;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+}
+
+.calendar-mode-toggle-group {
+  display: flex;
+  align-items: center;
+  background: #f1f5f9;
+  padding: 0.25rem;
+  border-radius: 8px;
+  gap: 0.25rem;
+  border: 1px solid #e2e8f0;
+}
+
+.calendar-mode-btn {
+  border: none;
+  background: transparent;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #64748b;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.calendar-mode-btn.active {
+  background: #ffffff;
+  color: #1e293b;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
 @keyframes subtleBlink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.75; }

@@ -182,6 +182,10 @@ class LiveSyncService:
                 models.Tender.last_date >= now,
                 models.Tender.last_date <= now + timedelta(days=3)
             ).count()
+            completed = db.query(models.Tender).filter(
+                models.Tender.last_date != None,
+                models.Tender.last_date < now
+            ).count()
             states_count = db.query(models.State).count()
             downloaded_docs = db.query(models.Document).filter(
                 models.Document.download_status == "downloaded"
@@ -211,6 +215,7 @@ class LiveSyncService:
                     "live_active_tenders": active,
                     "upcoming_tenders": upcoming,
                     "closing_soon_tenders": closing_soon,
+                    "completed_tenders": completed,
                     "monitored_portals": states_count,
                     "downloaded_authentic_documents": downloaded_docs,
                     "total_portal_documents": total_docs
@@ -551,11 +556,26 @@ class LiveSyncService:
             # Ingest any newly uploaded tenders & documents from portal feeds
             new_tenders_added = self._ingest_new_portal_uploads(db)
 
+            # Automatically synchronize proposal lifecycle statuses
+            db.query(models.Tender).filter(
+                models.Tender.last_date != None,
+                models.Tender.last_date < now,
+                models.Tender.status != "completed"
+            ).update({"status": "completed"}, synchronize_session=False)
+
+            db.query(models.Tender).filter(
+                models.Tender.last_date != None,
+                models.Tender.last_date >= now,
+                models.Tender.status.in_(["new", "completed"])
+            ).update({"status": "active"}, synchronize_session=False)
+            db.commit()
+
             # Re-compute global counts
             total = db.query(models.Tender).count()
             active = db.query(models.Tender).filter(models.Tender.published_date <= now, models.Tender.last_date >= now).count()
             upcoming = db.query(models.Tender).filter(models.Tender.published_date > now).count()
             closing_soon = db.query(models.Tender).filter(models.Tender.last_date >= now, models.Tender.last_date <= now + timedelta(days=3)).count()
+            completed = db.query(models.Tender).filter(models.Tender.last_date != None, models.Tender.last_date < now).count()
             total_docs = db.query(models.Document).count()
             downloaded_docs = db.query(models.Document).filter(models.Document.download_status == "downloaded").count()
 
@@ -563,9 +583,9 @@ class LiveSyncService:
             self.cycles_completed += 1
 
             if new_tenders_added > 0:
-                summary_msg = f"Synced 29 portals in {duration}s: Ingested {new_tenders_added} newly uploaded proposals! Total active: {active} live, {upcoming} upcoming. Documents: {downloaded_docs}/{total_docs} ready."
+                summary_msg = f"Synced 29 portals in {duration}s: Ingested {new_tenders_added} newly uploaded proposals! Status: {active} live, {completed} completed, {upcoming} upcoming. Documents: {downloaded_docs}/{total_docs} ready."
             else:
-                summary_msg = f"Synced 29 portals in {duration}s: {active} Live Active, {upcoming} Upcoming. All {downloaded_docs} documents 100% verified on disk."
+                summary_msg = f"Synced 29 portals in {duration}s: {active} Live Active, {completed} Completed/Closed, {upcoming} Upcoming. All {downloaded_docs} documents verified on disk."
 
             self.last_summary = summary_msg
 

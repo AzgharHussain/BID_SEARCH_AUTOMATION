@@ -29,14 +29,33 @@ app.add_middleware(
     expose_headers=["Content-Disposition"]
 )
 
+def update_tenders_lifecycle_status(db):
+    """Automatically categorize tender status: proposals past submission deadline are marked 'completed', current ones 'active'."""
+    now = datetime.utcnow()
+    # Mark expired proposals as completed
+    db.query(models.Tender).filter(
+        models.Tender.last_date != None,
+        models.Tender.last_date < now,
+        models.Tender.status != "completed"
+    ).update({"status": "completed"}, synchronize_session=False)
+
+    # Mark active proposals as active
+    db.query(models.Tender).filter(
+        models.Tender.last_date != None,
+        models.Tender.last_date >= now,
+        models.Tender.status.in_(["new", "completed"])
+    ).update({"status": "active"}, synchronize_session=False)
+    db.commit()
+
 @app.on_event("startup")
 def startup_event():
     live_sync_manager.start_scheduler()
     db = SessionLocal()
     try:
         ensure_partners_seeded(db)
+        update_tenders_lifecycle_status(db)
     except Exception as e:
-        print(f"Error seeding partners: {e}")
+        print(f"Error seeding partners or updating tender status: {e}")
     finally:
         db.close()
 

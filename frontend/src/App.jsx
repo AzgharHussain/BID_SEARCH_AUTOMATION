@@ -154,6 +154,7 @@ function App() {
   const [dateRangePreset, setDateRangePreset] = useState('ALL'); // 'ALL' | 'TODAY' | '7_DAYS' | '30_DAYS' | '60_DAYS' | '90_DAYS' | 'SPECIFIC'
   const [calendarActiveMonth, setCalendarActiveMonth] = useState('ALL'); // 'ALL' | specific 'YYYY-MM'
   const [modalSelectedDate, setModalSelectedDate] = useState(null); // Dynamic selected date in calendar modal
+  const [calendarViewMode, setCalendarViewMode] = useState('DUE_DATE'); // 'DUE_DATE' (Completed Deadlines) | 'PUBLISHED_DATE'
 
   // Collaboration Email Dispatch State
   const [collabRecipients, setCollabRecipients] = useState('swethagisfy@gmail.com');
@@ -263,6 +264,28 @@ function App() {
     return list;
   }, [reportData]);
 
+  // Helper to collect all completed tenders across all states
+  const allCompletedTenders = useMemo(() => {
+    const list = [];
+    const seen = new Set();
+    (reportData || []).forEach(st => {
+      (st.keywords || []).forEach(kw => {
+        (kw.tenders || []).forEach(t => {
+          const key = t.id || t.tender_id;
+          if (!seen.has(key) && (t.is_completed || t.stage === 'closed' || t.status === 'completed')) {
+            seen.add(key);
+            list.push({
+              ...t,
+              state_name: st.state_name,
+              keyword: kw.keyword
+            });
+          }
+        });
+      });
+    });
+    return list;
+  }, [reportData]);
+
   // Stage selection with auto-expanding accordions so documents are immediately visible
   const handleSelectStage = (stage) => {
     setStageFilter(stage);
@@ -297,6 +320,17 @@ function App() {
         });
       });
       setExpandedKw(prev => ({ ...prev, ...newExp }));
+    } else if (stage === 'COMPLETED') {
+      const newExp = {};
+      (reportData || []).forEach(st => {
+        (st.keywords || []).forEach(kw => {
+          if ((kw.tenders || []).some(t => t.is_completed || t.stage === 'closed' || t.status === 'completed')) {
+            newExp[`${st.state_name}-${kw.keyword}`] = true;
+          }
+        });
+      });
+      setExpandedKw(prev => ({ ...prev, ...newExp }));
+      showToast(`🏁 Filtered to ${completedCount} Completed Proposals (Submission Deadline Expired).`, 'info');
     } else if (stage === 'DOWNLOADED_ONLY') {
       const newExp = {};
       (reportData || []).forEach(st => {
@@ -1679,8 +1713,10 @@ function App() {
 
   // 90-Day Proposal Intelligence Calendar Aggregations (Dynamically computes rolling 90-day / 3-month window)
   const calendarData = useMemo(() => {
-    const dailyMap = {};
-    const seenTenderKeys = new Set();
+    const dailyMapDue = {};
+    const dailyMapPub = {};
+    const seenDueKeys = new Set();
+    const seenPubKeys = new Set();
 
     // Helper to format Date to 'YYYY-MM-DD' in local time
     const toISODate = (d) => {
@@ -1740,56 +1776,108 @@ function App() {
       });
     }
 
-    let totalIn90Days = 0;
+    let totalDueIn90Days = 0;
+    let totalCompletedIn90Days = 0;
+    let totalPubIn90Days = 0;
 
     (reportData || []).forEach(state => {
       (state.keywords || []).forEach(kw => {
         (kw.tenders || []).forEach(t => {
-          if (!t.published_date) return;
-          const dateStr = t.published_date.slice(0, 10);
-          if (!dailyMap[dateStr]) {
-            dailyMap[dateStr] = {
-              date: dateStr,
-              formatted: t.published_date_formatted || formatDateDMY(t.published_date),
-              tenders: [],
-              states: new Set(),
-              keywords: new Set(),
-              departments: new Set(),
-              liveCount: 0,
-              closedCount: 0
-            };
+          const uniqueKey = `${t.id || t.tender_id}-${state.state_name}`;
+
+          // 1. Group by Due Date / Completion Date
+          if (t.last_date) {
+            const dueDateStr = t.last_date.slice(0, 10);
+            const isCompleted = dueDateStr < todayStr || t.stage === 'closed' || t.status === 'completed' || t.is_completed;
+
+            if (!dailyMapDue[dueDateStr]) {
+              dailyMapDue[dueDateStr] = {
+                date: dueDateStr,
+                formatted: t.last_date_formatted || formatDateDMY(t.last_date),
+                tenders: [],
+                states: new Set(),
+                keywords: new Set(),
+                departments: new Set(),
+                liveCount: 0,
+                closedCount: 0,
+                completedCount: 0
+              };
+            }
+
+            const existingDue = dailyMapDue[dueDateStr].tenders.find(et => (et.id && et.id === t.id) || (et.tender_id && et.tender_id === t.tender_id));
+            if (existingDue) {
+              if (!existingDue.keyword_names) existingDue.keyword_names = [existingDue.keyword_name];
+              if (!existingDue.keyword_names.includes(kw.keyword)) existingDue.keyword_names.push(kw.keyword);
+              dailyMapDue[dueDateStr].keywords.add(kw.keyword);
+            } else {
+              dailyMapDue[dueDateStr].tenders.push({
+                ...t,
+                state_name: state.state_name,
+                keyword_name: kw.keyword,
+                keyword_names: [kw.keyword]
+              });
+              dailyMapDue[dueDateStr].states.add(state.state_name);
+              dailyMapDue[dueDateStr].keywords.add(kw.keyword);
+              if (t.department) dailyMapDue[dueDateStr].departments.add(t.department);
+
+              if (isCompleted) {
+                dailyMapDue[dueDateStr].closedCount++;
+                dailyMapDue[dueDateStr].completedCount++;
+              } else {
+                dailyMapDue[dueDateStr].liveCount++;
+              }
+
+              if (!seenDueKeys.has(uniqueKey)) {
+                seenDueKeys.add(uniqueKey);
+                if (dueDateStr >= ninetyDaysAgo && dueDateStr <= todayStr) {
+                  totalDueIn90Days++;
+                  if (isCompleted) totalCompletedIn90Days++;
+                }
+              }
+            }
           }
 
-          const uniqueKey = `${t.id || t.tender_id}-${state.state_name}`;
-          const existing = dailyMap[dateStr].tenders.find(et => (et.id && et.id === t.id) || (et.tender_id && et.tender_id === t.tender_id));
-
-          if (existing) {
-            // Already recorded for this date; aggregate extra keyword
-            if (!existing.keyword_names) existing.keyword_names = [existing.keyword_name];
-            if (!existing.keyword_names.includes(kw.keyword)) {
-              existing.keyword_names.push(kw.keyword);
+          // 2. Group by Published Date
+          if (t.published_date) {
+            const pubDateStr = t.published_date.slice(0, 10);
+            if (!dailyMapPub[pubDateStr]) {
+              dailyMapPub[pubDateStr] = {
+                date: pubDateStr,
+                formatted: t.published_date_formatted || formatDateDMY(t.published_date),
+                tenders: [],
+                states: new Set(),
+                keywords: new Set(),
+                departments: new Set(),
+                liveCount: 0,
+                closedCount: 0,
+                completedCount: 0
+              };
             }
-            dailyMap[dateStr].keywords.add(kw.keyword);
-          } else {
-            // New unique tender proposal for this date
-            dailyMap[dateStr].tenders.push({
-              ...t,
-              state_name: state.state_name,
-              keyword_name: kw.keyword,
-              keyword_names: [kw.keyword]
-            });
-            dailyMap[dateStr].states.add(state.state_name);
-            dailyMap[dateStr].keywords.add(kw.keyword);
-            if (t.department) dailyMap[dateStr].departments.add(t.department);
 
-            if (t.is_live) dailyMap[dateStr].liveCount++;
-            else dailyMap[dateStr].closedCount++;
+            const existingPub = dailyMapPub[pubDateStr].tenders.find(et => (et.id && et.id === t.id) || (et.tender_id && et.tender_id === t.tender_id));
+            if (existingPub) {
+              if (!existingPub.keyword_names) existingPub.keyword_names = [existingPub.keyword_name];
+              if (!existingPub.keyword_names.includes(kw.keyword)) existingPub.keyword_names.push(kw.keyword);
+              dailyMapPub[pubDateStr].keywords.add(kw.keyword);
+            } else {
+              dailyMapPub[pubDateStr].tenders.push({
+                ...t,
+                state_name: state.state_name,
+                keyword_name: kw.keyword,
+                keyword_names: [kw.keyword]
+              });
+              dailyMapPub[pubDateStr].states.add(state.state_name);
+              dailyMapPub[pubDateStr].keywords.add(kw.keyword);
+              if (t.department) dailyMapPub[pubDateStr].departments.add(t.department);
 
-            // Count towards rolling 90 days uniquely without double-counting
-            if (!seenTenderKeys.has(uniqueKey)) {
-              seenTenderKeys.add(uniqueKey);
-              if (dateStr >= ninetyDaysAgo && dateStr <= todayStr) {
-                totalIn90Days++;
+              if (t.is_live) dailyMapPub[pubDateStr].liveCount++;
+              else dailyMapPub[pubDateStr].closedCount++;
+
+              if (!seenPubKeys.has(uniqueKey)) {
+                seenPubKeys.add(uniqueKey);
+                if (pubDateStr >= ninetyDaysAgo && pubDateStr <= todayStr) {
+                  totalPubIn90Days++;
+                }
               }
             }
           }
@@ -1797,17 +1885,24 @@ function App() {
       });
     });
 
+    const activeDailyMap = calendarViewMode === 'DUE_DATE' ? dailyMapDue : dailyMapPub;
+    const totalIn90Days = calendarViewMode === 'DUE_DATE' ? totalDueIn90Days : totalPubIn90Days;
+
     return {
-      dailyMap,
+      dailyMap: activeDailyMap,
+      dailyMapDue,
+      dailyMapPub,
       months,
       totalIn90Days,
+      totalCompletedIn90Days,
+      totalPubIn90Days,
       todayStr,
       sevenDaysAgo,
       thirtyDaysAgo,
       sixtyDaysAgo,
       ninetyDaysAgo
     };
-  }, [reportData]);
+  }, [reportData, calendarViewMode]);
 
   // Filtered state data based on search, keyword dropdown, stageFilter, selectedState, and 90-day date filters
   const filteredReportData = useMemo(() => {
@@ -1831,16 +1926,20 @@ function App() {
         const tenders = kw.tenders.filter(t => {
           // Date Filter (90-Day Calendar & Presets)
           if (selectedDateFilter) {
-            const pubDate = (t.published_date || '').slice(0, 10);
-            if (pubDate !== selectedDateFilter) return false;
+            const checkDate = calendarViewMode === 'DUE_DATE' 
+              ? (t.last_date || '').slice(0, 10)
+              : (t.published_date || '').slice(0, 10);
+            if (checkDate !== selectedDateFilter) return false;
           } else if (dateRangePreset !== 'ALL') {
-            const pubDate = (t.published_date || '').slice(0, 10);
-            if (dateRangePreset === 'TODAY' && pubDate !== calendarData.todayStr) return false;
+            const checkDate = calendarViewMode === 'DUE_DATE' 
+              ? (t.last_date || '').slice(0, 10)
+              : (t.published_date || '').slice(0, 10);
+            if (dateRangePreset === 'TODAY' && checkDate !== calendarData.todayStr) return false;
             if (stageFilter !== 'UPCOMING') {
-              if (dateRangePreset === '7_DAYS' && (pubDate < calendarData.sevenDaysAgo || pubDate > calendarData.todayStr)) return false;
-              if (dateRangePreset === '30_DAYS' && (pubDate < calendarData.thirtyDaysAgo || pubDate > calendarData.todayStr)) return false;
-              if (dateRangePreset === '60_DAYS' && (pubDate < calendarData.sixtyDaysAgo || pubDate > calendarData.todayStr)) return false;
-              if (dateRangePreset === '90_DAYS' && (pubDate < calendarData.ninetyDaysAgo || pubDate > calendarData.todayStr)) return false;
+              if (dateRangePreset === '7_DAYS' && (checkDate < calendarData.sevenDaysAgo || checkDate > calendarData.todayStr)) return false;
+              if (dateRangePreset === '30_DAYS' && (checkDate < calendarData.thirtyDaysAgo || checkDate > calendarData.todayStr)) return false;
+              if (dateRangePreset === '60_DAYS' && (checkDate < calendarData.sixtyDaysAgo || checkDate > calendarData.todayStr)) return false;
+              if (dateRangePreset === '90_DAYS' && (checkDate < calendarData.ninetyDaysAgo || checkDate > calendarData.todayStr)) return false;
             }
           }
 
@@ -1849,6 +1948,7 @@ function App() {
           if (stageFilter === 'LIVE' && !t.is_live) return false;
           if (stageFilter === 'UPCOMING' && !t.is_upcoming) return false;
           if (stageFilter === 'CLOSING_SOON' && !t.is_closing_soon) return false;
+          if (stageFilter === 'COMPLETED' && !(t.is_completed || t.stage === 'closed' || t.status === 'completed')) return false;
 
           // Search query match (state, kw, tender_id, title, description, or department)
           if (!q) return true;
@@ -1879,7 +1979,7 @@ function App() {
         keywords: filteredKeywords
       };
     }).filter(Boolean).sort((a, b) => (a.state_name || '').localeCompare(b.state_name || ''));
-  }, [reportData, searchStateQuery, filterKeyword, stageFilter, selectedState, selectedDateFilter, dateRangePreset, calendarData]);
+  }, [reportData, searchStateQuery, filterKeyword, stageFilter, selectedState, selectedDateFilter, dateRangePreset, calendarData, calendarViewMode]);
 
   // Overview mode: True when browsing all 29 states without active keyword or search filters
   const isOverviewMode = selectedState === null && !searchStateQuery && filterKeyword === 'ALL' && stageFilter === 'ALL' && !selectedDateFilter && dateRangePreset === 'ALL';
@@ -1905,6 +2005,7 @@ function App() {
   let liveActiveCount = 0;
   let upcomingCount = 0;
   let closingSoonCount = 0;
+  let completedCount = 0;
   let totalKeywordsSearched = 0;
 
   const allUniqueDocIds = new Set();
@@ -1920,6 +2021,8 @@ function App() {
         } else if (t.stage === 'closing_soon') {
           closingSoonCount++;
           liveActiveCount++;
+        } else if (t.stage === 'closed' || t.is_completed || t.status === 'completed') {
+          completedCount++;
         } else {
           liveActiveCount++;
         }
@@ -2312,6 +2415,16 @@ function App() {
               <div className="stat-sub">Deadline in ≤ 3 Days</div>
             </div>
             <div 
+              className={`stat-card stat-completed ${stageFilter === 'COMPLETED' ? 'active-stat-card' : ''}`}
+              onClick={() => handleSelectStage('COMPLETED')}
+              style={{ cursor: 'pointer' }}
+              title="Click to view completed proposals whose submission deadline has expired (Completed)"
+            >
+              <div className="stat-label">🏁 Completed Proposals</div>
+              <div className="stat-value muted">{completedCount}</div>
+              <div className="stat-sub">Deadline Expired (90-Day History)</div>
+            </div>
+            <div 
               className={`stat-card ${stageFilter === 'DOWNLOADED_ONLY' ? 'active-stat-card' : ''}`}
               onClick={() => handleSelectStage('DOWNLOADED_ONLY')}
               style={{ cursor: 'pointer' }}
@@ -2687,6 +2800,13 @@ function App() {
             >
               ⚠️ Closing Soon ({closingSoonCount})
             </button>
+            <button 
+              className={`stage-tab completed ${stageFilter === 'COMPLETED' ? 'active' : ''}`}
+              onClick={() => handleSelectStage('COMPLETED')}
+              title="Filter to completed proposals whose submission deadline has expired"
+            >
+              🏁 Completed ({completedCount})
+            </button>
           </div>
 
           {/* Quick 90-Day Proposal Collection Selector Bar */}
@@ -3022,10 +3142,12 @@ function App() {
                                     </div>
                                   </div>
 
-                                  {kw.tenders.map((tender, tIdx) => (
+                                  {kw.tenders.map((tender, tIdx) => {
+                                    const isTenderCompleted = tender.stage === 'closed' || tender.is_completed || tender.status === 'completed';
+                                    return (
                                     <div 
                                       id={`tender-${tender.tender_id}`}
-                                      className={`tender-item ${highlightedTenderId === tender.tender_id ? 'new-tender-highlighted' : ''}`} 
+                                      className={`tender-item ${highlightedTenderId === tender.tender_id ? 'new-tender-highlighted' : ''} ${isTenderCompleted ? 'tender-completed' : ''}`} 
                                       key={tIdx}
                                     >
                                       <div className="tender-header-row">
@@ -3041,6 +3163,11 @@ function App() {
                                         )}
                                         {tender.stage === 'live' && (
                                           <span className="stage-pill live">🟢 LIVE ACTIVE</span>
+                                        )}
+                                        {isTenderCompleted && (
+                                          <span className="stage-pill completed" title={`Submission deadline ended on ${tender.last_date_formatted || 'Deadline passed'}`}>
+                                            🏁 SUBMISSION COMPLETED {tender.last_date_formatted ? `(${tender.last_date_formatted})` : ''}
+                                          </span>
                                         )}
                                         <span 
                                           className="stage-pill collab-indicator"
@@ -3429,9 +3556,9 @@ function App() {
                                           </div>
                                         );
                                       })()}
-
                                     </div>
-                                  ))}
+                                    );
+                                  })}
                                 </div>
                               )}
                             </div>
@@ -3562,9 +3689,29 @@ function App() {
           <div className="calendar-modal-title">
             <span style={{ fontSize: '2rem' }}>📅</span>
             <div>
-              <h2 style={{ fontSize: '1.4rem', fontWeight: 800, margin: 0 }}>90-Day Proposal Intelligence Calendar</h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                <h2 style={{ fontSize: '1.4rem', fontWeight: 800, margin: 0 }}>90-Day Proposal Intelligence Calendar</h2>
+                <div className="calendar-mode-toggle-group">
+                  <button 
+                    type="button"
+                    className={`calendar-mode-btn ${calendarViewMode === 'DUE_DATE' ? 'active' : ''}`}
+                    onClick={() => setCalendarViewMode('DUE_DATE')}
+                  >
+                    🏁 Due / Completed Dates
+                  </button>
+                  <button 
+                    type="button"
+                    className={`calendar-mode-btn ${calendarViewMode === 'PUBLISHED_DATE' ? 'active' : ''}`}
+                    onClick={() => setCalendarViewMode('PUBLISHED_DATE')}
+                  >
+                    📢 Published Dates
+                  </button>
+                </div>
+              </div>
               <div className="calendar-modal-sub" style={{ marginTop: '0.25rem', color: '#64748b', fontSize: '0.85rem' }}>
-                Explore authentic government tenders published over rolling 90 days ({formatDateDMY(calendarData.ninetyDaysAgo)} – {formatDateDMY(calendarData.todayStr)}) across 29 Indian States
+                {calendarViewMode === 'DUE_DATE'
+                  ? `Track proposal submission deadlines & completed bids over rolling 90 days (${formatDateDMY(calendarData.ninetyDaysAgo)} – ${formatDateDMY(calendarData.todayStr)}) across Indian States`
+                  : `Explore authentic government tenders published over rolling 90 days (${formatDateDMY(calendarData.ninetyDaysAgo)} – ${formatDateDMY(calendarData.todayStr)}) across 29 Indian States`}
               </div>
             </div>
           </div>
@@ -3652,6 +3799,8 @@ function App() {
                   const count = dayData?.tenders?.length || 0;
                   const isToday = dayStr === calendarData.todayStr;
                   const isSelected = (modalSelectedDate || calendarData.todayStr) === dayStr;
+                  const isPast = dayStr < calendarData.todayStr;
+                  const completedCount = dayData?.completedCount || (isPast && calendarViewMode === 'DUE_DATE' ? count : 0);
 
                   cells.push(
                     <div 
@@ -3660,13 +3809,13 @@ function App() {
                       onClick={() => {
                         setModalSelectedDate(dayStr);
                       }}
-                      title={`${formatDateDMY(dayStr)}: ${count} proposals published`}
+                      title={`${formatDateDMY(dayStr)}: ${count} proposals ${calendarViewMode === 'DUE_DATE' ? (isPast ? 'completed' : 'due') : 'published'}`}
                     >
                       {isToday && <span className="calendar-today-indicator" title="Today"></span>}
                       <span className="calendar-day-number">{dayNum}</span>
                       {count > 0 && (
-                        <span className="calendar-day-bid-count">
-                          {count} bids
+                        <span className={`calendar-day-bid-count ${calendarViewMode === 'DUE_DATE' && (isPast || completedCount > 0) ? 'completed-badge' : ''}`}>
+                          {calendarViewMode === 'DUE_DATE' && (isPast || completedCount > 0) ? `🏁 ${count} done` : `${count} bids`}
                         </span>
                       )}
                     </div>
@@ -3702,13 +3851,21 @@ function App() {
             const inspectData = activeInspectDate ? calendarData.dailyMap[activeInspectDate] : null;
             if (!inspectData) return null;
 
+            const isPastDate = activeInspectDate < calendarData.todayStr;
+
             return (
               <div className="calendar-day-inspector">
                 <div className="calendar-inspector-header">
                   <div className="calendar-inspector-title">
                     <span style={{ fontSize: '1.25rem' }}>🗓️</span>
                     <h3>
-                      Proposals Published on {formatDateDMY(activeInspectDate)}
+                      {calendarViewMode === 'DUE_DATE'
+                        ? (isPastDate
+                            ? `🏁 Proposals Completed on ${formatDateDMY(activeInspectDate)}`
+                            : activeInspectDate === calendarData.todayStr
+                              ? `⏰ Proposals Due Today (${formatDateDMY(activeInspectDate)})`
+                              : `⏳ Proposals Due on ${formatDateDMY(activeInspectDate)}`)
+                        : `📢 Proposals Published on ${formatDateDMY(activeInspectDate)}`}
                     </h3>
                   </div>
 
@@ -3719,9 +3876,20 @@ function App() {
                     <span className="calendar-inspector-stat-pill states">
                       🏛️ {inspectData.states.size} States
                     </span>
-                    <span className="calendar-inspector-stat-pill live">
-                      🟢 {inspectData.liveCount} Live Active
-                    </span>
+                    {calendarViewMode === 'DUE_DATE' ? (
+                      <>
+                        <span className="calendar-inspector-stat-pill live">
+                          🟢 {inspectData.liveCount || 0} Still Active
+                        </span>
+                        <span className="calendar-inspector-stat-pill" style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' }}>
+                          🏁 {inspectData.completedCount || (isPastDate ? inspectData.tenders.length : 0)} Completed
+                        </span>
+                      </>
+                    ) : (
+                      <span className="calendar-inspector-stat-pill live">
+                        🟢 {inspectData.liveCount} Live Active
+                      </span>
+                    )}
                   </div>
 
                   <div className="calendar-inspector-actions">
@@ -3731,7 +3899,7 @@ function App() {
                         setSelectedDateFilter(activeInspectDate);
                         setDateRangePreset('SPECIFIC');
                         setCurrentTab('tenders');
-                        showToast(`📅 Filtered to proposals published on ${formatDateDMY(activeInspectDate)}`, 'success');
+                        showToast(`📅 Filtered to proposals for ${formatDateDMY(activeInspectDate)}`, 'success');
                       }}
                       title="Filter entire application to show proposals from this specific date"
                     >
@@ -3742,6 +3910,7 @@ function App() {
 
                 <div className="calendar-inspector-proposals-list">
                   {inspectData.tenders.map((tender, tidx) => {
+                    const isTenderCompleted = tender.is_completed || tender.stage === 'closed' || (tender.last_date && tender.last_date.slice(0, 10) < calendarData.todayStr);
                     const tenderStage = tender.stage || (tender.is_live ? 'live' : 'upcoming');
                     const tenderKeyword = tender.keyword || tender.keyword_name || 'GIS';
                     const docsList = tender.documents && Array.isArray(tender.documents) ? tender.documents : [];
@@ -3757,8 +3926,8 @@ function App() {
                             <span className="calendar-inspector-badge-kw">
                               🏷️ {tenderKeyword}
                             </span>
-                            <span className={`calendar-inspector-badge-stage ${tenderStage}`}>
-                              {tenderStage === 'closing_soon' ? '⚠️ Closing Soon' : tender.is_live ? '🟢 Live Active' : '⏳ Upcoming'}
+                            <span className={`calendar-inspector-badge-stage ${isTenderCompleted ? 'closed' : tenderStage}`}>
+                              {isTenderCompleted ? '🏁 Completed' : tenderStage === 'closing_soon' ? '⚠️ Closing Soon' : tender.is_live ? '🟢 Live Active' : '⏳ Upcoming'}
                             </span>
                           </div>
                           <span className="calendar-inspector-tender-id">
@@ -3778,7 +3947,7 @@ function App() {
                           </span>
                           <span className="calendar-meta-dot">•</span>
                           <span className="calendar-meta-item">
-                            ⏰ Closing: <b>{formatDateDMY(tender.last_date) || 'Open'}</b>
+                            ⏰ Closing: <b>{isTenderCompleted ? `Completed (${tender.last_date_formatted || formatDateDMY(tender.last_date)})` : (tender.last_date_formatted || formatDateDMY(tender.last_date) || 'Open')}</b>
                           </span>
                           <span className="calendar-meta-dot">•</span>
                           <span className="calendar-meta-item">
@@ -6592,9 +6761,29 @@ function App() {
               <div className="calendar-modal-title">
                 <span style={{ fontSize: '1.75rem' }}>📅</span>
                 <div>
-                  <h2>90-Day Proposal Intelligence Calendar</h2>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                    <h2>90-Day Proposal Intelligence Calendar</h2>
+                    <div className="calendar-mode-toggle-group">
+                      <button 
+                        type="button"
+                        className={`calendar-mode-btn ${calendarViewMode === 'DUE_DATE' ? 'active' : ''}`}
+                        onClick={() => setCalendarViewMode('DUE_DATE')}
+                      >
+                        🏁 Due / Completed Dates
+                      </button>
+                      <button 
+                        type="button"
+                        className={`calendar-mode-btn ${calendarViewMode === 'PUBLISHED_DATE' ? 'active' : ''}`}
+                        onClick={() => setCalendarViewMode('PUBLISHED_DATE')}
+                      >
+                        📢 Published Dates
+                      </button>
+                    </div>
+                  </div>
                   <div className="calendar-modal-sub">
-                    Explore authentic government tenders published over rolling 90 days ({formatDateDMY(calendarData.ninetyDaysAgo)} – {formatDateDMY(calendarData.todayStr)}) across 29 Indian States
+                    {calendarViewMode === 'DUE_DATE'
+                      ? `Track proposal submission deadlines & completed bids over rolling 90 days (${formatDateDMY(calendarData.ninetyDaysAgo)} – ${formatDateDMY(calendarData.todayStr)}) across Indian States`
+                      : `Explore authentic government tenders published over rolling 90 days (${formatDateDMY(calendarData.ninetyDaysAgo)} – ${formatDateDMY(calendarData.todayStr)}) across 29 Indian States`}
                   </div>
                 </div>
               </div>
@@ -6693,6 +6882,8 @@ function App() {
                       const count = dayData?.tenders?.length || 0;
                       const isToday = dayStr === calendarData.todayStr;
                       const isSelected = (modalSelectedDate || calendarData.todayStr) === dayStr;
+                      const isPast = dayStr < calendarData.todayStr;
+                      const completedCount = dayData?.completedCount || (isPast && calendarViewMode === 'DUE_DATE' ? count : 0);
 
                       cells.push(
                         <div 
@@ -6701,13 +6892,13 @@ function App() {
                           onClick={() => {
                             setModalSelectedDate(dayStr);
                           }}
-                          title={`${formatDateDMY(dayStr)}: ${count} proposals published`}
+                          title={`${formatDateDMY(dayStr)}: ${count} proposals ${calendarViewMode === 'DUE_DATE' ? (isPast ? 'completed' : 'due') : 'published'}`}
                         >
                           {isToday && <span className="calendar-today-indicator" title="Today"></span>}
                           <span className="calendar-day-number">{dayNum}</span>
                           {count > 0 && (
-                            <span className="calendar-day-bid-count">
-                              {count} bids
+                            <span className={`calendar-day-bid-count ${calendarViewMode === 'DUE_DATE' && (isPast || completedCount > 0) ? 'completed-badge' : ''}`}>
+                              {calendarViewMode === 'DUE_DATE' && (isPast || completedCount > 0) ? `🏁 ${count} done` : `${count} bids`}
                             </span>
                           )}
                         </div>
@@ -6743,13 +6934,21 @@ function App() {
                 const inspectData = activeInspectDate ? calendarData.dailyMap[activeInspectDate] : null;
                 if (!inspectData) return null;
 
+                const isPastDate = activeInspectDate < calendarData.todayStr;
+
                 return (
                   <div className="calendar-day-inspector">
                     <div className="calendar-inspector-header">
                       <div className="calendar-inspector-title">
                         <span style={{ fontSize: '1.25rem' }}>🗓️</span>
                         <h3>
-                          Proposals Published on {formatDateDMY(activeInspectDate)}
+                          {calendarViewMode === 'DUE_DATE'
+                            ? (isPastDate
+                                ? `🏁 Proposals Completed on ${formatDateDMY(activeInspectDate)}`
+                                : activeInspectDate === calendarData.todayStr
+                                  ? `⏰ Proposals Due Today (${formatDateDMY(activeInspectDate)})`
+                                  : `⏳ Proposals Due on ${formatDateDMY(activeInspectDate)}`)
+                            : `📢 Proposals Published on ${formatDateDMY(activeInspectDate)}`}
                         </h3>
                       </div>
 
@@ -6760,9 +6959,20 @@ function App() {
                         <span className="calendar-inspector-stat-pill states">
                           🏛️ {inspectData.states.size} States
                         </span>
-                        <span className="calendar-inspector-stat-pill live">
-                          🟢 {inspectData.liveCount} Live Active
-                        </span>
+                        {calendarViewMode === 'DUE_DATE' ? (
+                          <>
+                            <span className="calendar-inspector-stat-pill live">
+                              🟢 {inspectData.liveCount || 0} Still Active
+                            </span>
+                            <span className="calendar-inspector-stat-pill" style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' }}>
+                              🏁 {inspectData.completedCount || (isPastDate ? inspectData.tenders.length : 0)} Completed
+                            </span>
+                          </>
+                        ) : (
+                          <span className="calendar-inspector-stat-pill live">
+                            🟢 {inspectData.liveCount} Live Active
+                          </span>
+                        )}
                       </div>
 
                       <div className="calendar-inspector-actions">
@@ -6772,7 +6982,7 @@ function App() {
                             setSelectedDateFilter(activeInspectDate);
                             setDateRangePreset('SPECIFIC');
                             setShowCalendarModal(false);
-                            showToast(`📅 Filtered application to proposals published on ${formatDateDMY(activeInspectDate)}`, 'success');
+                            showToast(`📅 Filtered application to proposals for ${formatDateDMY(activeInspectDate)}`, 'success');
                           }}
                           title="Filter entire application to show proposals from this specific date"
                         >
@@ -6795,44 +7005,58 @@ function App() {
 
                     {/* List of Tenders for this date */}
                     <div className="calendar-tenders-list">
-                      {inspectData.tenders.map((tender, tIdx) => (
-                        <div key={tender.id || tIdx} className="calendar-tender-card">
-                          <div className="calendar-tender-badges">
-                            <span className="calendar-state-badge">🏛️ {tender.state_name}</span>
-                            {(tender.keyword_names || [tender.keyword_name]).map((k, kIdx) => (
-                              <span key={kIdx} className="calendar-kw-badge">🏷️ {k}</span>
-                            ))}
-                            <span style={{ marginLeft: 'auto', fontWeight: 700, fontSize: '0.72rem', color: tender.is_live ? '#166534' : '#64748b' }}>
-                              {tender.is_live ? '🟢 Live Active' : 'Archive'}
-                            </span>
+                      {inspectData.tenders.map((tender, tIdx) => {
+                        const isTenderCompleted = tender.is_completed || tender.stage === 'closed' || (tender.last_date && tender.last_date.slice(0, 10) < calendarData.todayStr);
+                        return (
+                          <div key={tender.id || tIdx} className="calendar-tender-card">
+                            <div className="calendar-tender-badges">
+                              <span className="calendar-state-badge">🏛️ {tender.state_name}</span>
+                              {(tender.keyword_names || [tender.keyword_name]).map((k, kIdx) => (
+                                <span key={kIdx} className="calendar-kw-badge">🏷️ {k}</span>
+                              ))}
+                              <span style={{ 
+                                marginLeft: 'auto', 
+                                fontWeight: 700, 
+                                fontSize: '0.72rem', 
+                                color: isTenderCompleted ? '#475569' : (tender.is_live ? '#166534' : '#64748b'),
+                                background: isTenderCompleted ? '#f1f5f9' : 'transparent',
+                                padding: '2px 8px',
+                                borderRadius: '4px',
+                                border: isTenderCompleted ? '1px solid #cbd5e1' : 'none'
+                              }}>
+                                {isTenderCompleted ? '🏁 Completed' : (tender.is_live ? '🟢 Live Active' : 'Archive')}
+                              </span>
+                            </div>
+                            <div className="calendar-tender-title" title={tender.title}>
+                              {tender.title}
+                            </div>
+                            <div className="calendar-tender-dept" title={tender.department}>
+                              🏢 {tender.department || 'State Department'}
+                            </div>
+                            <div className="calendar-tender-footer">
+                              <span className="calendar-tender-deadline">
+                                {isTenderCompleted 
+                                  ? `🏁 Submission Closed: ${tender.last_date_formatted || formatDateDMY(tender.last_date)}`
+                                  : `⏳ Due: ${tender.last_date_formatted || formatDateDMY(tender.last_date)}`}
+                              </span>
+                              <button 
+                                className="calendar-jump-btn"
+                                onClick={() => {
+                                  setSelectedState(tender.state_name);
+                                  setSelectedDateFilter(activeInspectDate);
+                                  setShowCalendarModal(false);
+                                  setTimeout(() => {
+                                    const el = document.getElementById(`tender-${tender.tender_id}`);
+                                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                  }, 400);
+                                }}
+                              >
+                                Jump to Proposal ↗
+                              </button>
+                            </div>
                           </div>
-                          <div className="calendar-tender-title" title={tender.title}>
-                            {tender.title}
-                          </div>
-                          <div className="calendar-tender-dept" title={tender.department}>
-                            🏢 {tender.department || 'State Department'}
-                          </div>
-                          <div className="calendar-tender-footer">
-                            <span className="calendar-tender-deadline">
-                              ⏳ Due: {tender.last_date_formatted || formatDateDMY(tender.last_date)}
-                            </span>
-                            <button 
-                              className="calendar-jump-btn"
-                              onClick={() => {
-                                setSelectedState(tender.state_name);
-                                setSelectedDateFilter(activeInspectDate);
-                                setShowCalendarModal(false);
-                                setTimeout(() => {
-                                  const el = document.getElementById(`tender-${tender.tender_id}`);
-                                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                }, 400);
-                              }}
-                            >
-                              Jump to Proposal ↗
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 );

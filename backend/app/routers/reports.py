@@ -299,6 +299,7 @@ def get_state_keyword_report(
             now = datetime.utcnow()
             stage = "live"
             days_left = None
+            days_past_deadline = None
             if tender.published_date and tender.published_date > now:
                 stage = "upcoming"
                 days_left = max(0, (tender.published_date - now).days)
@@ -307,12 +308,15 @@ def get_state_keyword_report(
                 if diff_days < 0:
                     stage = "closed"
                     days_left = 0
+                    days_past_deadline = abs(diff_days)
                 elif diff_days <= 3:
                     stage = "closing_soon"
                     days_left = diff_days
                 else:
                     stage = "live"
                     days_left = diff_days
+
+            is_completed = stage == "closed"
 
             t_obj = {
                 "id": tender.id,
@@ -323,12 +327,17 @@ def get_state_keyword_report(
                 "published_date_formatted": tender.published_date.strftime("%d %b %Y") if tender.published_date else None,
                 "last_date": tender.last_date.isoformat() if tender.last_date else None,
                 "last_date_formatted": tender.last_date.strftime("%d %b %Y") if tender.last_date else None,
-                "status": tender.status,
+                "status": "completed" if is_completed else (tender.status or "active"),
                 "stage": stage,
                 "days_left": days_left,
+                "days_past_deadline": days_past_deadline,
+                "is_completed": is_completed,
+                "is_closed": is_completed,
                 "is_live": stage in ("live", "closing_soon"),
                 "is_upcoming": stage == "upcoming",
                 "is_closing_soon": stage == "closing_soon",
+                "completion_date": tender.last_date.isoformat() if (tender.last_date and is_completed) else None,
+                "completion_date_formatted": tender.last_date.strftime("%d %b %Y") if (tender.last_date and is_completed) else None,
                 "description": tender.description,
                 "portal_tender_url": tender.portal_tender_url or state.portal_url,
                 "documents": docs
@@ -363,39 +372,60 @@ def get_state_keyword_report(
 
 
 @router.get("/calendar-stats")
-def get_calendar_stats(days: int = Query(90, ge=7, le=365), db: Session = Depends(get_db)):
+def get_calendar_stats(
+    days: int = Query(90, ge=7, le=365),
+    view_by: str = Query("due_date", description="Mode: 'due_date' (submission deadlines & completed proposals) or 'published_date'"),
+    db: Session = Depends(get_db)
+):
     """Return 90-day proposal statistics and daily distribution map for the interactive calendar."""
     from datetime import timedelta
     anchor = datetime.utcnow()
     start_date = (anchor - timedelta(days=days)).replace(hour=0, minute=0, second=0, microsecond=0)
-    
     future_window = anchor + timedelta(days=60)
     
-    tenders = db.query(models.Tender).filter(
-        models.Tender.published_date >= start_date, 
-        models.Tender.published_date <= future_window
-    ).order_by(models.Tender.published_date.asc()).all()
+    if view_by == "due_date":
+        tenders = db.query(models.Tender).filter(
+            models.Tender.last_date != None,
+            models.Tender.last_date >= start_date, 
+            models.Tender.last_date <= future_window
+        ).order_by(models.Tender.last_date.asc()).all()
+    else:
+        tenders = db.query(models.Tender).filter(
+            models.Tender.published_date != None,
+            models.Tender.published_date >= start_date, 
+            models.Tender.published_date <= future_window
+        ).order_by(models.Tender.published_date.asc()).all()
     
     daily_stats = {}
     monthly_stats = {}
+    total_completed = 0
+    total_live = 0
     
     for t in tenders:
-        if not t.published_date:
+        target_dt = t.last_date if view_by == "due_date" else t.published_date
+        if not target_dt:
             continue
-        date_str = t.published_date.strftime("%Y-%m-%d")
-        month_str = t.published_date.strftime("%B %Y")
+        date_str = target_dt.strftime("%Y-%m-%d")
+        month_str = target_dt.strftime("%B %Y")
+        is_completed = bool(t.last_date and t.last_date < anchor)
         
+        if is_completed:
+            total_completed += 1
+        else:
+            total_live += 1
+
         if date_str not in daily_stats:
             daily_stats[date_str] = {
                 "date": date_str,
-                "formatted": t.published_date.strftime("%d %b %Y"),
-                "day_name": t.published_date.strftime("%A"),
+                "formatted": target_dt.strftime("%d %b %Y"),
+                "day_name": target_dt.strftime("%A"),
                 "count": 0,
                 "states": set(),
                 "keywords": set(),
                 "departments": set(),
                 "live_count": 0,
-                "closed_count": 0
+                "closed_count": 0,
+                "completed_count": 0
             }
         daily_stats[date_str]["count"] += 1
         if t.state and t.state.name:
@@ -405,14 +435,19 @@ def get_calendar_stats(days: int = Query(90, ge=7, le=365), db: Session = Depend
         if t.department:
             daily_stats[date_str]["departments"].add(t.department)
             
-        if t.last_date and t.last_date >= anchor:
-            daily_stats[date_str]["live_count"] += 1
-        else:
+        if is_completed:
             daily_stats[date_str]["closed_count"] += 1
+            daily_stats[date_str]["completed_count"] += 1
+        else:
+            daily_stats[date_str]["live_count"] += 1
             
         if month_str not in monthly_stats:
-            monthly_stats[month_str] = { "month": month_str, "count": 0 }
+            monthly_stats[month_str] = { "month": month_str, "count": 0, "completed_count": 0, "live_count": 0 }
         monthly_stats[month_str]["count"] += 1
+        if is_completed:
+            monthly_stats[month_str]["completed_count"] += 1
+        else:
+            monthly_stats[month_str]["live_count"] += 1
 
     serialized_daily = {}
     for d, s in daily_stats.items():
@@ -425,15 +460,19 @@ def get_calendar_stats(days: int = Query(90, ge=7, le=365), db: Session = Depend
             "states": sorted(list(s["states"])),
             "keywords": sorted(list(s["keywords"])),
             "live_count": s["live_count"],
-            "closed_count": s["closed_count"]
+            "closed_count": s["closed_count"],
+            "completed_count": s["completed_count"]
         }
         
     return {
         "status": "success",
+        "view_by": view_by,
         "window_days": days,
         "start_date": start_date.strftime("%Y-%m-%d"),
         "end_date": future_window.strftime("%Y-%m-%d"),
         "total_proposals": len(tenders),
+        "total_completed": total_completed,
+        "total_live": total_live,
         "active_dates_count": len(daily_stats),
         "daily_stats": serialized_daily,
         "monthly_summary": list(monthly_stats.values())
