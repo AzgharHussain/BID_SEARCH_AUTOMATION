@@ -1073,7 +1073,8 @@ def get_all_partners(
 def compute_partner_match(tender: models.Tender, partner: models.Partner) -> Dict[str, Any]:
     """
     Intelligently calculate match score, category, and specific 'why needed' rationale
-    for a collaboration partner based on the tender's title, department, description, state, and keywords.
+    for a collaboration partner based on the tender's exact technical requirements,
+    scope of work, state location, keywords, department, and title.
     """
     tender_title = (tender.title or "").lower()
     tender_desc = (tender.description or "").lower()
@@ -1088,152 +1089,364 @@ def compute_partner_match(tender: models.Tender, partner: models.Partner) -> Dic
     p_certs = (partner.certifications or "").lower()
     p_desc = (partner.description or "").lower()
     p_name = (partner.name or "").lower()
+    p_all = f"{p_name} {p_domain} {p_sec} {p_certs} {p_desc}"
+    p_state = (partner.state or "").lower()
+    t_state_lower = tender_state.lower()
 
-    base_score = 65.0
+    base_score = 60.0
     matched_reasons = []
     synergies = []
 
-    # Domain match rules
-    if "drone" in p_domain or "lidar" in p_domain or "aerial" in p_domain:
-        if any(term in tender_text for term in ["drone", "lidar", "aerial", "uav", "svamitva", "photogrammetry", "ortho"]):
+    # 1. WATER RESOURCES / PIPELINE / AMRUT / SCADA / DRAINAGE / IRRIGATION / RESERVOIR
+    if any(w in tender_text for w in ["water", "pipeline", "scada", "amrut", "jal jeevan", "irrigation", "canal", "reservoir", "aquaculture", "hydraulic", "drainage", "hydrology", "dam", "flood", "pumping", "belapur", "nerul", "turbhe", "vashi"]):
+        if "ceinsys" in p_name:
+            base_score += 33.0
+            matched_reasons.append("AMRUT Water Supply Pipeline Network & Hydraulic SCADA telemetry specialist with proven Belapur/Nerul/Turbhe past project experience")
+            synergies.append("Ceinsys Tech provides hydraulic flow modeling & field telemetry; GISFY operates the spatial AMRUT geodatabase portal")
+        elif "wapcos" in p_name:
+            base_score += 31.0
+            matched_reasons.append("Premier Central Water Commission (CWC) empaneled partner for water resources engineering, dam safety & reservoir modeling")
+            synergies.append("WAPCOS leads hydrology engineering & river basin DPR; GISFY conducts spatial raster analytics & WebGIS dashboards")
+        elif "vassar" in p_name:
+            base_score += 29.0
+            matched_reasons.append("Smart water IoT telemetry, satellite soil moisture tracking, and real-time flood forecasting algorithms")
+            synergies.append("Vassar Labs provides sensor IoT feeds & water telemetry; GISFY delivers executive mapping interface")
+        elif "cyient" in p_name:
             base_score += 26.0
-            matched_reasons.append("Mandatory requirement for DGCA Type-Certified drones and calibrated LiDAR payloads")
-            synergies.append("Partner provides DGCA-certified flight crew & raw LiDAR collection; GISFY conducts spatial analytics & geoportal integration")
-        elif any(term in tender_text for term in ["survey", "mapping", "topographic", "contour"]):
-            base_score += 15.0
-            matched_reasons.append("Airborne aerial mapping capability complements ground survey requirements")
-            synergies.append("Accelerates topographic data capture via high-speed drone corridor passes")
+            matched_reasons.append("Large-scale utility pipeline network GIS data modeler and linear water distribution engineering")
+            synergies.append("Cyient executes utility topological data clean-up; GISFY integrates live sensor feeds")
+        elif "indomer" in p_name:
+            base_score += 24.0
+            matched_reasons.append("Hydraulic oceanographic flow and estuarine water circulation modeling")
+            synergies.append("Indomer conducts hydrodynamic flow modeling; GISFY renders 3D water surface layers")
 
-    if "satellite" in p_domain or "remote sensing" in p_domain:
-        if any(term in tender_text for term in ["satellite", "remote sensing", "imagery", "spectral", "vegetation", "crop", "earth observation"]):
-            base_score += 28.0
-            matched_reasons.append("Direct source for sub-meter commercial optical & SAR radar satellite imagery")
-            synergies.append("Partner licenses and orthorectifies 30cm Maxar/Planet constellations; GISFY models change detection workflows")
-        elif any(term in tender_text for term in ["forest", "water", "agriculture", "climate", "environment"]):
-            base_score += 17.0
-            matched_reasons.append("Multi-temporal satellite monitoring required for large-scale natural resource tracking")
-            synergies.append("Provides historical satellite baseline and quarterly vegetation indices")
-
-    if "cloud" in p_domain or "meity" in p_domain:
-        if any(term in tender_text for term in ["cloud", "hosting", "data center", "server", "ict", "security audit", "stqc", "storage"]):
-            base_score += 29.0
-            matched_reasons.append("Fulfills RFP mandatory criterion for MeitY-empaneled sovereign GovCloud Tier-3/4 hosting")
-            synergies.append("Partner manages STQC-cleared sovereign data center infrastructure; GISFY deploys application containers & WebGIS")
-        elif any(term in tender_text for term in ["software", "portal", "geoportal", "mis", "application", "website", "digital"]):
-            base_score += 18.0
-            matched_reasons.append("High-availability enterprise hosting infrastructure required for public-facing state portals")
-            synergies.append("Provides 99.95% uptime SLA and disaster recovery replication")
-
-    if "cadastral" in p_domain or "dgps" in p_domain:
-        if any(term in tender_text for term in ["cadastral", "dgps", "total station", "boundary", "land records", "revenue", "demarcation"]):
-            base_score += 28.0
-            matched_reasons.append("Survey of India Class-A certified field teams with 50+ DGPS rovers for ground boundary demarcation")
-            synergies.append("Partner mobilizes field ground survey crews in districts; GISFY handles cartographic validation & database digitization")
-        elif any(term in tender_text for term in ["survey", "topographic", "road", "railway", "pipeline"]):
-            base_score += 16.0
-            matched_reasons.append("Ground control network (GCP) establishment for engineering survey accuracy")
-            synergies.append("Executes dual-frequency GNSS baseline calibration for ground control")
-
-    if "ai" in p_domain or "vision" in p_domain:
-        if any(term in tender_text for term in ["ai", "machine learning", "deep learning", "automation", "feature extraction", "analytics"]):
+    # 2. FOREST / MIYAWAKI / CANOPY / WILDLIFE / BAMBOO / TREE PLANTATION / NCAP
+    if any(w in tender_text for w in ["forest", "miyawaki", "wildlife", "canopy", "bamboo", "tree", "plantation", "afforestation", "biodiversity", "ncap", "clean air"]):
+        if "asteria" in p_name:
+            base_score += 34.0
+            matched_reasons.append("DGCA-certified drone canopy surveillance and automated forest reserve wildlife protection")
+            synergies.append("Asteria Aerospace operates drone survey flights; GISFY builds canopy density NDVI spatial maps")
+        elif "vimta" in p_name:
+            base_score += 32.0
+            matched_reasons.append("QCI/NABET accredited environmental consultancy specializing in ecological impact assessment & tree census")
+            synergies.append("Vimta Labs conducts botanical fieldwork and tree health validation; GISFY generates spatial green cover maps")
+        elif "erm" in p_name:
+            base_score += 30.0
+            matched_reasons.append("International biodiversity assessment, NCAP clean air compliance, and urban forestry standards")
+            synergies.append("ERM leads environmental audit and air quality baselines; GISFY provides GIS emission heatmaps")
+        elif "garuda" in p_name:
             base_score += 27.0
-            matched_reasons.append("Automated AI computer vision pipelines for high-throughput building footprint & asset detection")
-            synergies.append("Partner trains neural models for automated extraction; GISFY validates topology and delivers shapefiles")
-        elif any(term in tender_text for term in ["smart city", "property", "encroachment", "change detection"]):
-            base_score += 15.0
-            matched_reasons.append("AI anomaly detection for rapid property identification and encroachment alerts")
-            synergies.append("Automates municipal property tax discrepancy checks from drone imagery")
+            matched_reasons.append("Drone fleet for aerial seed bombing, plantation monitoring, and large-scale afforestation scouting")
+            synergies.append("Garuda executes drone flight operations; GISFY analyzes multispectral survival rates")
+        elif "satpalda" in p_name:
+            base_score += 25.0
+            matched_reasons.append("Sub-meter satellite imagery (WorldView/Planet) for quarterly forest cover change detection")
+            synergies.append("SATPALDA supplies high-res satellite ortho-images; GISFY automates deforestation alerts")
 
-    if "water" in p_domain or "scada" in p_domain:
-        if any(term in tender_text for term in ["water", "irrigation", "canal", "river", "hydrology", "scada", "dam", "flood", "drainage"]):
-            base_score += 29.0
-            matched_reasons.append("Central Water Commission (CWC) empaneled partner with calibrated ultrasonic flow & telemetry sensors")
-            synergies.append("Partner deploys IoT field telemetry & hydraulic modeling (HEC-RAS); GISFY builds command center dashboards")
-        elif any(term in tender_text for term in ["smart city", "utility", "environmental"]):
-            base_score += 14.0
-            matched_reasons.append("Water network spatial monitoring and storm water drainage modeling expertise")
-            synergies.append("Supplies sensor nodes and telemetry interfaces for urban hydrological monitoring")
-
-    if "smart city" in p_domain or "municipal" in p_domain:
-        if any(term in tender_text for term in ["smart city", "municipal", "property tax", "urban", "ulb", "town planning", "3d city"]):
+    # 3. ARCHITECTURAL / DESIGN / STRUCTURAL / MEP / CONSULTANCY / PLANNING
+    if any(w in tender_text for w in ["architect", "architectural", "mep", "structural", "designing", "consultancy", "residential quarters", "planning", "tpo", "revised development plan", "consultant"]):
+        if "aarvee" in p_name:
+            base_score += 35.0
+            matched_reasons.append("Registered architectural, structural, and MEP engineering consultancy with comprehensive government building experience")
+            synergies.append("Aarvee Associates provides certified architectural blueprints & MEP engineering; GISFY builds 3D BIM/GIS digital model")
+        elif "consulting engineers group" in p_name:
+            base_score += 32.0
+            matched_reasons.append("Infrastructure design and detailed project report (DPR) consultancy for government public works")
+            synergies.append("CEG delivers structural calculations & engineering drawings; GISFY manages spatial site integration")
+        elif "secon" in p_name:
             base_score += 28.0
-            matched_reasons.append("MoHUA empaneled consultant experienced in 3D Digital Twin city models & municipal property tax revenue")
-            synergies.append("Partner leads door-to-door property enumeration & municipal domain; GISFY implements the WebGIS portal")
-        elif any(term in tender_text for term in ["gis", "mapping", "survey"]):
-            base_score += 13.0
-            matched_reasons.append("Extensive municipal administrative data models and Urban Local Body (ULB) integration")
-            synergies.append("Ensures compliance with National Urban Information System (NUIS) standards")
+            matched_reasons.append("Civil infrastructure engineering, site master planning, and structural design support")
+            synergies.append("SECON conducts engineering site surveys; GISFY prepares WebGIS project portal")
+        elif "genesys" in p_name:
+            base_score += 25.0
+            matched_reasons.append("Town planning, 3D urban architecture modeling, and master development plan GIS")
+            synergies.append("Genesys produces 3D urban massing; GISFY delivers zoning geodatabase")
 
-    if "forest" in p_domain or "environmental" in p_domain:
-        if any(term in tender_text for term in ["forest", "environment", "wildlife", "climate", "carbon", "ecology", "eia", "biodiversity"]):
-            base_score += 29.0
-            matched_reasons.append("QCI/NABET accredited environmental consultancy & Forest Survey of India research expertise")
-            synergies.append("Partner executes ecological field sampling and carbon stock assessment; GISFY provides spatial modeling")
-        elif any(term in tender_text for term in ["remote sensing", "satellite", "water"]):
-            base_score += 14.0
-            matched_reasons.append("Vegetation density indices and catchment area treatment planning support")
-            synergies.append("Analyzes spectral bands for watershed environmental impact assessments")
-
-    if "civil" in p_domain or "infra" in p_domain:
-        if any(term in tender_text for term in ["civil", "highway", "road", "railway", "dpr", "bridge", "corridor", "pavement", "pwd"]):
+    # 4. HEALTHCARE / MEDICAL / DIAGNOSTIC / BIO-MEDICAL WASTE / CLINIC
+    if any(w in tender_text for w in ["health", "diagnostic", "hospital", "medical", "bio-medical", "waste treatment", "clinic", "patient", "bphu", "health sub centre", "blood", "pathology"]):
+        if "vimta" in p_name:
+            base_score += 35.0
+            matched_reasons.append("NABL-accredited clinical reference testing, diagnostic laboratory logistics, and bio-medical waste compliance")
+            synergies.append("Vimta Labs operates NABL diagnostic workflows; GISFY provides healthcare facility GIS mapping and patient routing")
+        elif "ctrls" in p_name:
+            base_score += 28.0
+            matched_reasons.append("MeitY-empaneled healthcare data storage, patient EHR cloud infrastructure & HIPAA-compliant security")
+            synergies.append("CtrlS hosts sovereign clinical database; GISFY deploys healthcare management software")
+        elif "tata communications" in p_name:
             base_score += 26.0
-            matched_reasons.append("NHAI and RDSO approved engineering consultancy with heavy geotechnical and corridor survey rigs")
-            synergies.append("Partner delivers engineering DPR and cross-section profiles; GISFY delivers alignment WebGIS")
-        elif any(term in tender_text for term in ["survey", "cctv", "construction"]):
-            base_score += 12.0
-            matched_reasons.append("Civil infrastructure and site layout engineering expertise")
-            synergies.append("Provides certified civil surveyor stamps and structural site clearance")
+            matched_reasons.append("Tele-medicine network infrastructure, hospital optical connectivity & secure diagnostic data transfer")
+            synergies.append("Tata Communications provides telemedicine backbone; GISFY integrates GIS clinic dispatch")
+        elif "esds" in p_name:
+            base_score += 24.0
+            matched_reasons.append("Government health portal auto-scaling eNlight sovereign cloud hosting")
+            synergies.append("ESDS guarantees 99.95% healthcare portal uptime; GISFY leads application delivery")
 
-    if "equipment" in p_domain or "sensor" in p_domain:
-        if any(term in tender_text for term in ["equipment", "sensor", "hardware", "calibration", "mobile lidar", "sounder", "instrument"]):
+    # 5. CCTV / SURVEILLANCE / SAFE CITY / TRAFFIC / CAMERA / POLICE
+    if any(w in tender_text for w in ["cctv", "camera", "surveillance", "safe city", "traffic", "command center", "police", "video", "chauraho", "nvr", "dvr"]):
+        if "keltron" in p_name:
+            base_score += 35.0
+            matched_reasons.append("State nodal electronics manufacturer specializing in citywide CCTV surveillance, ANPR cameras, and smart traffic control")
+            synergies.append("KELTRON supplies state-approved camera hardware & optical video telemetry; GISFY renders GIS video surveillance map feeds")
+        elif "tata communications" in p_name:
+            base_score += 32.0
+            matched_reasons.append("Integrated Command and Control Centre (ICCC) cloud architecture with high-concurrency video surveillance feeds")
+            synergies.append("Tata Communications hosts cloud surveillance ICCC; GISFY builds spatial camera asset layers")
+        elif "mapmyindia" in p_name:
+            base_score += 29.0
+            matched_reasons.append("Safe city IoT telematics, emergency vehicle automated dispatch & AI traffic incident mapping")
+            synergies.append("MapmyIndia provides road navigation feeds; GISFY handles surveillance site mapping")
+        elif "ctrls" in p_name:
             base_score += 27.0
-            matched_reasons.append("GeM Star OEM seller providing high-accuracy mobile LiDAR vehicle rigs and NABL calibration certificates")
-            synergies.append("Partner guarantees zero-downtime sensor hardware leasing; GISFY operates survey crews & post-processes data")
-        elif any(term in tender_text for term in ["lidar", "drone", "survey"]):
-            base_score += 15.0
-            matched_reasons.append("NABL-calibrated instruments ensure compliance with strict RFP instrument accuracy limits")
-            synergies.append("Supplies backup mobile LiDAR scanners and laser receiver pods")
+            matched_reasons.append("Rated-4 high-bandwidth storage infrastructure for municipal CCTV video evidence archival")
+            synergies.append("CtrlS guarantees 90-day video retention archival; GISFY operates security dashboard")
 
-    if any(t in p_domain for t in ["gis & spatial web", "geoportal", "software development", "web application"]):
-        if any(term in tender_text for term in ["software", "portal", "geoportal", "mis", "application", "database", "web", "dashboard", "development", "it", "ict", "digital"]):
+    # 6. ELECTRICAL / SUBSTATION / POWER GRID / GIS SUBSTATION / KV TRANSMISSION / MECHANICAL
+    if any(w in tender_text for w in ["electrical", "substation", "gis substation", "kv", "transmission", "mechanical", "armo", "rmo", "e and m", "transformer", "overhauling", "switchgear"]):
+        if "cyient" in p_name:
+            base_score += 35.0
+            matched_reasons.append("Specialized in 220/132/33KV high-voltage substation engineering, utility grid GIS asset management & SCADA")
+            synergies.append("Cyient conducts electrical substation asset modeling; GISFY delivers power distribution GIS geodatabase")
+        elif "aarvee" in p_name:
+            base_score += 31.0
+            matched_reasons.append("Comprehensive electrical, mechanical (E&M) and power transmission infrastructure engineering")
+            synergies.append("Aarvee Associates prepares technical maintenance DPRs; GISFY manages spatial asset inspections")
+        elif "tata communications" in p_name:
             base_score += 27.0
-            matched_reasons.append("State IT & Electronics Development Corp empaneled CMMI-certified GIS development partner")
-            synergies.append("Partner co-develops backend modules and spatial database connectors; GISFY leads core proposals & frontend portal")
+            matched_reasons.append("Industrial SCADA telemetry, substation IoT monitoring & secure power transmission network integration")
+            synergies.append("Tata Communications supplies telemetry gateways; GISFY visualizes real-time power flow")
+        elif "secon" in p_name:
+            base_score += 25.0
+            matched_reasons.append("Transmission line tower corridor alignment, profile leveling, and electrical route surveys")
+            synergies.append("SECON executes route geodetic survey; GISFY builds GIS transmission network")
 
-    if "hydrographic" in p_domain or "marine" in p_domain or "coastal" in p_domain:
-        if any(term in tender_text for term in ["coastal", "marine", "bathymetric", "port", "hydrographic", "ocean", "harbour", "estuary"]):
+    # 7. CIVIL WORKS / ROAD / HIGHWAY / BRIDGE / CAUSEWAY / DRAINAGE / PWD
+    if any(w in tender_text for w in ["road", "highway", "causeway", "hume pipes", "bridge", "pavement", "motor road", "dpr", "drainage", "culvert", "asphalt", "pwd", "nhai"]):
+        if "consulting engineers group" in p_name:
+            base_score += 35.0
+            matched_reasons.append("NHAI and State PWD approved engineering consultancy for highway alignment, pavement design, and detailed project reports")
+            synergies.append("CEG delivers civil road engineering drawings & pavement evaluations; GISFY integrates corridor alignment WebGIS")
+        elif "aarvee" in p_name:
+            base_score += 31.0
+            matched_reasons.append("Rail, highway, bridge and civil drainage infrastructure engineering design")
+            synergies.append("Aarvee Associates provides structural bridge & drainage calculations; GISFY renders spatial site profiles")
+        elif "matrix geo" in p_name:
+            base_score += 29.0
+            matched_reasons.append("Linear infrastructure DPRs, DGPS highway topographic profiling, and cross-section modeling")
+            synergies.append("Matrix Geo provides linear elevation profiles; GISFY analyzes geometric alignment GIS")
+        elif "geokno" in p_name:
+            base_score += 27.0
+            matched_reasons.append("Mobile laser scanning (MLS) for road surface roughness, pavement distress & corridor LiDAR")
+            synergies.append("Geokno executes mobile LiDAR vehicle passes; GISFY processes 3D point clouds")
+
+    # 8. EMPANELMENT / CARBON CREDIT / ENVIRONMENT / CLEARANCES / ESG
+    if any(w in tender_text for w in ["empanelment", "carbon credit", "consultancies", "agencies", "environment", "clean air", "pollution", "clearance", "crz", "eia", "esg"]):
+        if "erm" in p_name:
+            base_score += 35.0
+            matched_reasons.append("Global leader in carbon credit generation, verification methodology, and ESG environmental clearancing")
+            synergies.append("ERM India structures carbon offset credits & monetization; GISFY validates spatial carbon sequestration via satellite")
+        elif "vimta" in p_name:
+            base_score += 31.0
+            matched_reasons.append("NABET-accredited for environmental clearances, state pollution testing & environmental impact assessments")
+            synergies.append("Vimta Labs leads statutory environmental clearance filings; GISFY provides spatial EIA overlay maps")
+        elif "rmsi" in p_name:
             base_score += 28.0
-            matched_reasons.append("National Hydrographic Office (NHO) certified bathymetric echo sounding & coastal zone mapping")
-            synergies.append("Partner executes marine sonar transects; GISFY renders 3D bathymetric mesh & coastal erosion models")
+            matched_reasons.append("Empaneled risk modeling consultancy for climate hazard, flood vulnerability, and environmental GIS")
+            synergies.append("RMSI models environmental hazard risks; GISFY hosts portal interfaces")
 
-    if "mining" in p_domain or "mineral" in p_domain:
-        if any(term in tender_text for term in ["mining", "mineral", "lease", "geology", "quarry", "excavation", "coal"]):
+    # 9. CADASTRAL / DGPS / LAND RECORDS / TOTAL STATION / DEMARCATION / REVENUE
+    if any(w in tender_text for w in ["cadastral", "dgps", "total station", "land records", "revenue", "demarcation", "contour", "topographical", "boundary", "survey of india", "resurvey"]):
+        if "marvel" in p_name:
+            base_score += 34.0
+            matched_reasons.append("Survey of India Class-A certified field teams with 60+ DGPS rovers for ground boundary demarcation & cadastral mapping")
+            synergies.append("Marvel Geospatial mobilizes district survey crews; GISFY validates topology and builds revenue parcel database")
+        elif "lawrence" in p_name:
+            base_score += 31.0
+            matched_reasons.append("OEM manufacturer and certified calibrator of GNSS/DGPS rovers and electronic total stations")
+            synergies.append("Lawrence & Mayo guarantees calibrated field survey instruments; GISFY conducts spatial parcel analytics")
+        elif "neogeo" in p_name:
+            base_score += 29.0
+            matched_reasons.append("Land records modernization, cadastral resurvey, and automated land administration GIS portals")
+            synergies.append("NeoGeoInfo executes field land records digitization; GISFY hosts central portal")
+        elif "kashyap" in p_name:
+            base_score += 29.0
+            matched_reasons.append("Local DGPS topographic survey, contour mapping, and ground boundary verification team")
+            synergies.append("Kashyap Geo Tech executes district field ground control; GISFY generates CAD/GIS deliverables")
+        elif "gis consortium" in p_name:
             base_score += 27.0
-            matched_reasons.append("Dept of Mines & Geology empaneled partner with DGPS concession lease demarcation and volumetric LiDAR")
-            synergies.append("Partner conducts pit volumetric drone mapping; GISFY provides reconciliation GIS reports")
+            matched_reasons.append("Large-scale cadastral resurvey and municipal property tax GIS mapping")
+            synergies.append("GIS Consortium executes door-to-door property surveys; GISFY delivers WebGIS")
 
-    if "agriculture" in p_domain or "agro" in p_domain or "crop" in p_domain:
-        if any(term in tender_text for term in ["agriculture", "crop", "farming", "pmfby", "soil", "horticulture", "agri"]):
+    # 10. DRONE / UAV / AERIAL PHOTOGRAMMETRY / AIRBORNE LIDAR
+    if any(w in tender_text for w in ["drone", "uav", "aerial", "lidar", "svamitva", "photogrammetry", "orthomosaic", "unmanned"]):
+        if "ideaforge" in p_name:
+            base_score += 35.0
+            matched_reasons.append("DGCA Type-Certified mapping drones (SWITCH, NETRA V4+) with proven delivery of 100,000+ villages under SVAMITVA")
+            synergies.append("ideaForge supplies DGCA-certified drone hardware & flight crew; GISFY conducts photogrammetry post-processing")
+        elif "garuda" in p_name:
+            base_score += 31.0
+            matched_reasons.append("Fleet of 400+ DGCA-certified drones and certified remote pilots for large-area aerial surveying")
+            synergies.append("Garuda Aerospace deploys local drone survey teams; GISFY delivers GIS orthomosaic layers")
+        elif "asteria" in p_name:
+            base_score += 31.0
+            matched_reasons.append("DGCA Type-Certified UAV manufacturer with SkyDeck cloud analytics platform")
+            synergies.append("Asteria operates UAV flight missions; GISFY integrates SkyDeck spatial APIs")
+        elif "aereo" in p_name or "aarav" in p_name:
+            base_score += 30.0
+            matched_reasons.append("Largest SVAMITVA drone survey execution contractor having mapped 25,000+ villages")
+            synergies.append("Aereo executes high-throughput drone flights; GISFY prepares spatial cadastre deliverables")
+        elif "roter" in p_name:
+            base_score += 29.0
+            matched_reasons.append("Authorized distributor and operator of high-end RIEGL airborne and UAV LiDAR laser scanners")
+            synergies.append("Roter supplies survey-grade LiDAR sensors; GISFY classifies raw point clouds")
+        elif "skylark" in p_name:
             base_score += 27.0
-            matched_reasons.append("State Agriculture Dept empaneled partner for PMFBY satellite crop yield & drought assessment")
-            synergies.append("Partner collects ground-truthing crop spectral samples; GISFY models satellite vegetation anomaly maps")
+            matched_reasons.append("Drone survey analytics platform for linear infrastructure and mining corridor inspections")
+            synergies.append("Skylark provides cloud drone analytics; GISFY delivers state WebGIS integration")
 
-    if "consortium" in p_domain or "turnkey" in p_domain:
-        # High financial turnover lead partner
-        base_score += 18.0
-        matched_reasons.append("₹88+ Cr turnover fulfills high financial qualifying criteria & provides Bank Guarantee / EMD backing")
-        synergies.append("Partner acts as Lead Bidder / Consortium Financial Sponsor; GISFY executes complete geospatial technical delivery")
+    # 11. SATELLITE / REMOTE SENSING / EARTH OBSERVATION / SPACE DATA
+    if any(w in tender_text for w in ["satellite", "remote sensing", "imagery", "earth observation", "spectral", "maxar", "planet", "cartosat", "resourcesat", "isro", "change detection"]):
+        if "satpalda" in p_name:
+            base_score += 35.0
+            matched_reasons.append("Direct distributor of sub-meter commercial satellite constellations (Maxar 30cm, PlanetScope, Airbus Pléiades Neo)")
+            synergies.append("SATPALDA licenses and orthorectifies sub-meter satellite stereo-pairs; GISFY conducts spatial feature extraction")
+        elif "newspace" in p_name or "nsil" in p_name:
+            base_score += 33.0
+            matched_reasons.append("ISRO commercial arm providing high-resolution Indian Remote Sensing (Cartosat, Resourcesat, Oceansat) satellite data")
+            synergies.append("NSIL coordinates sovereign satellite tasking; GISFY deploys spatial decision support systems")
+        elif "scanpoint" in p_name:
+            base_score += 31.0
+            matched_reasons.append("Developer of IGiS indigenous remote sensing and GIS software platform co-developed with ISRO")
+            synergies.append("Scanpoint Geomatics supplies IGiS image processing engine; GISFY designs customized user workflows")
+        elif "rmsi" in p_name:
+            base_score += 27.0
+            matched_reasons.append("Multi-temporal satellite change detection and disaster hazard risk modeling")
+            synergies.append("RMSI prepares remote sensing vulnerability indices; GISFY delivers interactive maps")
 
-    # State geographic bonus
-    if partner.state and tender_state and partner.state.lower() == tender_state.lower():
-        base_score += 9.0
-        matched_reasons.append(f"Local state vendor with operational branch & ground presence in {tender_state}")
+    # 12. CLOUD / DATA CENTER / MEITY GOVCLOUD / SOVEREIGN HOSTING / STQC
+    if any(w in tender_text for w in ["cloud", "data center", "server", "hosting", "meity", "tier-3", "tier-4", "stqc", "uptime", "storage", "ict infrastructure"]):
+        if "yotta" in p_name:
+            base_score += 35.0
+            matched_reasons.append("MeitY-empaneled sovereign Tier-IV hyperscale data center with STQC security clearance and high-performance computing")
+            synergies.append("Yotta Data Services manages sovereign Tier-IV cloud infrastructure; GISFY deploys application containers & GIS microservices")
+        elif "esds" in p_name:
+            base_score += 33.0
+            matched_reasons.append("MeitY-empaneled eNlight sovereign cloud with patented vertical auto-scaling for state government portals")
+            synergies.append("ESDS guarantees 99.95% portal uptime SLA; GISFY develops the GIS web application")
+        elif "ctrls" in p_name:
+            base_score += 31.0
+            matched_reasons.append("Rated-4 hyperscale data center operator providing MeitY-cleared disaster recovery and sovereign storage")
+            synergies.append("CtrlS provisions primary and DR server clusters; GISFY manages application deployment")
+        elif "sify" in p_name:
+            base_score += 29.0
+            matched_reasons.append("MeitY-empaneled cloud provider with integrated state wide area network (SWAN) telecom infrastructure")
+            synergies.append("Sify integrates secure government networking; GISFY delivers end-user GIS portals")
+        elif "tata communications" in p_name:
+            base_score += 27.0
+            matched_reasons.append("Enterprise cloud security, DDoS mitigation, and MeitY-empaneled infrastructure")
+            synergies.append("Tata Communications delivers cyber-security shielding; GISFY builds front-end applications")
+
+    # 13. MARINE / COASTAL / BATHYMETRIC / OCEAN / PORT / HARBOUR
+    if any(w in tender_text for w in ["coastal", "marine", "bathymetric", "ocean", "port", "harbour", "sonar", "estuary", "hydrographic", "crz clearance", "dredging"]):
+        if "iic" in p_name:
+            base_score += 35.0
+            matched_reasons.append("National Hydrographic Office (NHO) certified hydrographic surveys, multibeam bathymetric sonar & marine charting")
+            synergies.append("IIC Technologies executes marine survey vessel sonar runs; GISFY prepares 3D coastal bathymetric models")
+        elif "indomer" in p_name:
+            base_score += 33.0
+            matched_reasons.append("Oceanographic modeling, coastal regulation zone (CRZ) clearances, and shoreline erosion tracking")
+            synergies.append("Indomer conducts hydrodynamic numerical modeling; GISFY produces statutory CRZ maps")
+        elif "elcome" in p_name:
+            base_score += 29.0
+            matched_reasons.append("Marine navigation aids, multibeam echo sounders, and hydrographic survey equipment integration")
+            synergies.append("Elcome provides calibrated sonar hardware; GISFY post-processes bathymetry soundings")
+
+    # 14. MINING / QUARRY / MINERAL CONCESSION / VOLUMETRIC SURVEY
+    if any(w in tender_text for w in ["mining", "mineral", "quarry", "lease", "geology", "coal", "volumetric", "excavation"]):
+        if "aereo" in p_name or "aarav" in p_name:
+            base_score += 35.0
+            matched_reasons.append("Empaneled by major mining corporations for open-cast pit volumetric drone surveys & cut/fill calculation")
+            synergies.append("Aereo executes monthly drone volumetric flights; GISFY generates excavation reconciliation reports")
+        elif "skylark" in p_name:
+            base_score += 31.0
+            matched_reasons.append("Cloud-based drone mining analytics platform for stockpile volumetrics and haul road compliance")
+            synergies.append("Skylark provides automated volumetric algorithms; GISFY integrates cadastral concession bounds")
+        elif "marvel" in p_name:
+            base_score += 29.0
+            matched_reasons.append("DGPS mineral concession boundary lease demarcation and statutory mine plan surveying")
+            synergies.append("Marvel establishes statutory DGPS boundary pillars; GISFY produces DGMS compliance maps")
+
+    # 15. AGRICULTURE / CROP HEALTH / SOIL / KRISHI / PMFBY
+    if any(w in tender_text for w in ["agriculture", "crop", "soil", "farming", "krishi", "pmfby", "horticulture", "farmer"]):
+        if "garuda" in p_name:
+            base_score += 35.0
+            matched_reasons.append("DGCA-certified agricultural Krishi drone fleet for precision crop health scouting and micro-spraying")
+            synergies.append("Garuda executes drone field operations across rural clusters; GISFY provides spatial farm yield analytics")
+        elif "vassar" in p_name:
+            base_score += 32.0
+            matched_reasons.append("Satellite crop phenology, soil moisture telemetry, and automated PMFBY crop loss assessment algorithms")
+            synergies.append("Vassar Labs computes agricultural risk models; GISFY delivers farmer geoportal dashboards")
+        elif "satpalda" in p_name:
+            base_score += 28.0
+            matched_reasons.append("Multispectral satellite imagery (Sentinel/Planet) for vegetation index (NDVI) anomaly monitoring")
+            synergies.append("SATPALDA processes satellite spectral bands; GISFY correlates crop stress zones")
+
+    # 16. BLOCKCHAIN / TRACEABILITY / SUPPLY CHAIN / FARMER APP
+    if any(w in tender_text for w in ["blockchain", "traceability", "organic", "hyperledger", "evm", "smart contracts", "supply chain"]):
+        if "scanpoint" in p_name:
+            base_score += 35.0
+            matched_reasons.append("Indigenous software engineering with enterprise blockchain smart contracts and mobile app delivery")
+            synergies.append("Scanpoint Geomatics engineers the Hyperledger/EVM traceability architecture; GISFY builds farm spatial apps")
+        elif "webel" in p_name:
+            base_score += 31.0
+            matched_reasons.append("State IT nodal corporation for enterprise e-governance and secure supply chain applications")
+            synergies.append("Webel provides enterprise state cloud infrastructure; GISFY implements mobile traceability frontend")
+        elif "vassar" in p_name:
+            base_score += 29.0
+            matched_reasons.append("Agri-food supply chain validation and farmer verification algorithms")
+            synergies.append("Vassar Labs runs supply chain analytics; GISFY maps organic certification boundaries")
+
+    # 17. 3D DIGITAL TWIN / SMART CITY / MUNICIPAL PROPERTY TAX
+    if any(w in tender_text for w in ["digital twin", "3d city", "smart city", "property tax", "street view 360", "municipal", "ulb", "town planning"]):
+        if "genesys" in p_name:
+            base_score += 35.0
+            matched_reasons.append("Official 3D Digital Twin Partner for Survey of India, builder of Ayodhya 3D City Platform & municipal WebGIS")
+            synergies.append("Genesys produces high-resolution 3D city mesh & Street View 360; GISFY builds municipal tax assessment portal")
+        elif "mapmyindia" in p_name:
+            base_score += 31.0
+            matched_reasons.append("Comprehensive digital map layers, Street View 360 imaging & municipal navigation SDKs")
+            synergies.append("MapmyIndia supplies base map APIs & street imaging; GISFY implements municipal property workflows")
+        elif "neogeo" in p_name:
+            base_score += 28.0
+            matched_reasons.append("Municipal property tax geospatial database and Urban Local Body (ULB) WebGIS portals")
+            synergies.append("NeoGeoInfo executes door-to-door property GIS enumeration; GISFY integrates billing connectors")
+
+    # 18. STATE NODAL IT/ELECTRONICS CORPORATION MATCHES
+    if t_state_lower in ["kerala"] and "keltron" in p_name:
+        base_score += 20.0
+        matched_reasons.append("State Nodal Electronics Corporation of Kerala (KELTRON) providing statutory state backing & local technical presence")
+    elif t_state_lower in ["bihar"] and "beltron" in p_name:
+        base_score += 20.0
+        matched_reasons.append("State Nodal E-Governance Corporation of Bihar (BELTRON) providing statutory state backing & local technical presence")
+    elif t_state_lower in ["west bengal"] and "webel" in p_name:
+        base_score += 20.0
+        matched_reasons.append("State Nodal IT & Electronics Corporation of West Bengal (Webel) providing statutory state backing & local technical presence")
+    elif t_state_lower in ["odisha"] and "ocac" in p_name:
+        base_score += 20.0
+        matched_reasons.append("State Nodal IT Directorate of Odisha (OCAC) providing statutory state backing & local technical presence")
+    elif t_state_lower in ["punjab"] and "punjab information" in p_name:
+        base_score += 20.0
+        matched_reasons.append("State Nodal IT Corporation of Punjab (Punjab ICT) providing statutory state backing & local technical presence")
+    elif t_state_lower in ["andhra pradesh"] and ("kashyap" in p_name or "marvel" in p_name or "cyient" in p_name):
+        base_score += 12.0
+        matched_reasons.append("Local operational footprint, district survey crews, and verified field offices across Andhra Pradesh")
+    elif p_state and t_state_lower and p_state == t_state_lower:
+        base_score += 8.0
+        matched_reasons.append(f"Local state vendor with registered presence in {tender_state}")
     elif partner.pan_india_presence:
-        base_score += 3.0
+        base_score += 2.0
 
     # Ensure score bounds
     final_score = min(98.5, max(62.0, base_score))
-    # Round to 1 decimal
     final_score = round(final_score, 1)
 
     # Classify category
@@ -1248,9 +1461,9 @@ def compute_partner_match(tender: models.Tender, partner: models.Partner) -> Dic
 
     # Fallback reasons if generic
     if not matched_reasons:
-        matched_reasons.append(f"Provides complementary specialized capabilities in {partner.primary_domain}")
+        matched_reasons.append(f"Pre-qualified collaboration partner with specialized domain capabilities in {partner.primary_domain}")
     if not synergies:
-        synergies.append(f"Collaborates with GISFY in a Joint Venture (JV) combining GISFY's GIS platform with {partner.short_name or partner.name}'s technical domain")
+        synergies.append(f"Collaborates with GISFY in a Joint Venture (JV) combining GISFY's GIS platform with {partner.short_name or partner.name}'s technical capabilities")
 
     why_needed = f"Key Requirement for Tender #{tender.tender_id}: " + "; ".join(matched_reasons[:2]) + "."
     synergy_scope = "; ".join(synergies[:2]) + "."

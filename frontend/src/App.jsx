@@ -167,6 +167,7 @@ function App() {
   const [selectedPartnerTender, setSelectedPartnerTender] = useState(null);
   const [partnerStateName, setPartnerStateName] = useState(null);
   const [partnersList, setPartnersList] = useState([]);
+  const [allPartnersDirectory, setAllPartnersDirectory] = useState([]);
   const [loadingPartners, setLoadingPartners] = useState(false);
   const [partnerSearchQuery, setPartnerSearchQuery] = useState('');
   const [partnerDomainFilter, setPartnerDomainFilter] = useState('ALL');
@@ -1252,14 +1253,16 @@ function App() {
         const res = await fetch(`${API_BASE}/api/partners`);
         if (res.ok) {
           const data = await res.json();
-          setPartnersList(data.map(p => ({
+          const mapped = data.map(p => ({
             ...p,
             collaboration_status: p.status || 'Available',
             match_score: null,
             match_category: 'Verified Partner Profile',
             why_needed: p.description || 'Specialized domain partner available for Pan-India Joint Ventures.',
             synergy_scope: 'Joint Venture consortium partner with GISFY.'
-          })));
+          }));
+          setPartnersList(mapped);
+          setAllPartnersDirectory(mapped);
         } else {
           setPartnersList([]);
         }
@@ -1430,56 +1433,467 @@ function App() {
 
   // Integrated RFP Collaboration Partner Matching for each tender card
   const getTopPartnersForTender = useCallback((tender, stateName) => {
-    if (!partnersList || partnersList.length === 0) return [];
-    const text = `${tender.title || ''} ${tender.keyword || ''} ${tender.department || ''}`.toLowerCase();
-    const stateLower = (stateName || '').toLowerCase();
+    const pool = (allPartnersDirectory && allPartnersDirectory.length > 0)
+      ? allPartnersDirectory
+      : (partnersList || []);
+    if (!pool || pool.length === 0) return [];
 
-    const scored = partnersList.map(p => {
-      let score = 72.0;
+    const tenderTitle = (tender?.title || '').toLowerCase();
+    const tenderDesc = (tender?.description || '').toLowerCase();
+    const tenderDept = (tender?.department || '').toLowerCase();
+    const tenderKeyword = (tender?.keyword || '').toLowerCase();
+    const kwList = Array.isArray(tender?.keywords)
+      ? tender.keywords.map(k => (typeof k === 'string' ? k : k.keyword || '')).join(' ').toLowerCase()
+      : '';
+    const stateLower = (stateName || tender?.state?.name || tender?.state_name || '').toLowerCase();
+
+    const tenderText = `${tenderTitle} ${tenderDesc} ${tenderDept} ${tenderKeyword} ${kwList} ${stateLower}`;
+
+    const scored = pool.map(p => {
+      const pName = (p.name || '').toLowerCase();
+      const pShort = (p.short_name || '').toLowerCase();
       const pDomain = (p.primary_domain || '').toLowerCase();
       const pSec = (p.secondary_domains || '').toLowerCase();
-      const pAll = `${pDomain} ${pSec}`;
+      const pCerts = (p.certifications || '').toLowerCase();
+      const pDesc = (p.description || '').toLowerCase();
+      const pState = (p.state || '').toLowerCase();
+      const pAll = `${pName} ${pShort} ${pDomain} ${pSec} ${pCerts} ${pDesc}`;
 
-      if (text.includes('drone') || text.includes('uav') || text.includes('aerial')) {
-        if (pAll.includes('drone') || pAll.includes('uav') || pAll.includes('aerial')) score += 24;
+      let baseScore = 60.0;
+      const matchedReasons = [];
+      const synergies = [];
+
+      const textHasAny = (words) => words.some(w => tenderText.includes(w));
+
+      // 1. WATER RESOURCES / PIPELINE / AMRUT / SCADA / DRAINAGE / IRRIGATION / RESERVOIR
+      if (textHasAny(['water', 'pipeline', 'scada', 'amrut', 'jal jeevan', 'irrigation', 'canal', 'reservoir', 'aquaculture', 'hydraulic', 'drainage', 'hydrology', 'dam', 'flood', 'pumping', 'belapur', 'nerul', 'turbhe', 'vashi'])) {
+        if (pName.includes('ceinsys')) {
+          baseScore += 33.0;
+          matchedReasons.push('AMRUT Water Supply Pipeline Network & Hydraulic SCADA telemetry specialist with proven Belapur/Nerul/Turbhe past project experience');
+          synergies.push('Ceinsys Tech provides hydraulic flow modeling & field telemetry; GISFY operates the spatial AMRUT geodatabase portal');
+        } else if (pName.includes('wapcos')) {
+          baseScore += 31.0;
+          matchedReasons.push('Premier Central Water Commission (CWC) empaneled partner for water resources engineering, dam safety & reservoir modeling');
+          synergies.push('WAPCOS leads hydrology engineering & river basin DPR; GISFY conducts spatial raster analytics & WebGIS dashboards');
+        } else if (pName.includes('vassar')) {
+          baseScore += 29.0;
+          matchedReasons.push('Smart water IoT telemetry, satellite soil moisture tracking, and real-time flood forecasting algorithms');
+          synergies.push('Vassar Labs provides sensor IoT feeds & water telemetry; GISFY delivers executive mapping interface');
+        } else if (pName.includes('cyient')) {
+          baseScore += 26.0;
+          matchedReasons.push('Large-scale utility pipeline network GIS data modeler and linear water distribution engineering');
+          synergies.push('Cyient executes utility topological data clean-up; GISFY integrates live sensor feeds');
+        } else if (pName.includes('indomer')) {
+          baseScore += 24.0;
+          matchedReasons.push('Hydraulic oceanographic flow and estuarine water circulation modeling');
+          synergies.push('Indomer conducts hydrodynamic flow modeling; GISFY renders 3D water surface layers');
+        }
       }
-      if (text.includes('gis') || text.includes('geospatial') || text.includes('mapping')) {
-        if (pAll.includes('gis') || pAll.includes('spatial') || pAll.includes('twin')) score += 22;
+
+      // 2. FOREST / MIYAWAKI / CANOPY / WILDLIFE / BAMBOO / TREE PLANTATION / NCAP
+      if (textHasAny(['forest', 'miyawaki', 'wildlife', 'canopy', 'bamboo', 'tree', 'plantation', 'afforestation', 'biodiversity', 'ncap', 'clean air'])) {
+        if (pName.includes('asteria')) {
+          baseScore += 34.0;
+          matchedReasons.push('DGCA-certified drone canopy surveillance and automated forest reserve wildlife protection');
+          synergies.push('Asteria Aerospace operates drone survey flights; GISFY builds canopy density NDVI spatial maps');
+        } else if (pName.includes('vimta')) {
+          baseScore += 32.0;
+          matchedReasons.push('QCI/NABET accredited environmental consultancy specializing in ecological impact assessment & tree census');
+          synergies.push('Vimta Labs conducts botanical fieldwork and tree health validation; GISFY generates spatial green cover maps');
+        } else if (pName.includes('erm')) {
+          baseScore += 30.0;
+          matchedReasons.push('International biodiversity assessment, NCAP clean air compliance, and urban forestry standards');
+          synergies.push('ERM leads environmental audit and air quality baselines; GISFY provides GIS emission heatmaps');
+        } else if (pName.includes('garuda')) {
+          baseScore += 27.0;
+          matchedReasons.push('Drone fleet for aerial seed bombing, plantation monitoring, and large-scale afforestation scouting');
+          synergies.push('Garuda executes drone flight operations; GISFY analyzes multispectral survival rates');
+        } else if (pName.includes('satpalda')) {
+          baseScore += 25.0;
+          matchedReasons.push('Sub-meter satellite imagery (WorldView/Planet) for quarterly forest cover change detection');
+          synergies.push('SATPALDA supplies high-res satellite ortho-images; GISFY automates deforestation alerts');
+        }
       }
-      if (text.includes('lidar') || text.includes('photogrammetry')) {
-        if (pAll.includes('lidar') || pAll.includes('photogrammetry')) score += 24;
+
+      // 3. ARCHITECTURAL / DESIGN / STRUCTURAL / MEP / CONSULTANCY / PLANNING
+      if (textHasAny(['architect', 'architectural', 'mep', 'structural', 'designing', 'consultancy', 'residential quarters', 'planning', 'tpo', 'revised development plan', 'consultant'])) {
+        if (pName.includes('aarvee')) {
+          baseScore += 35.0;
+          matchedReasons.push('Registered architectural, structural, and MEP engineering consultancy with comprehensive government building experience');
+          synergies.push('Aarvee Associates provides certified architectural blueprints & MEP engineering; GISFY builds 3D BIM/GIS digital model');
+        } else if (pName.includes('consulting engineers group')) {
+          baseScore += 32.0;
+          matchedReasons.push('Infrastructure design and detailed project report (DPR) consultancy for government public works');
+          synergies.push('CEG delivers structural calculations & engineering drawings; GISFY manages spatial site integration');
+        } else if (pName.includes('secon')) {
+          baseScore += 28.0;
+          matchedReasons.push('Civil infrastructure engineering, site master planning, and structural design support');
+          synergies.push('SECON conducts engineering site surveys; GISFY prepares WebGIS project portal');
+        } else if (pName.includes('genesys')) {
+          baseScore += 25.0;
+          matchedReasons.push('Town planning, 3D urban architecture modeling, and master development plan GIS');
+          synergies.push('Genesys produces 3D urban massing; GISFY delivers zoning geodatabase');
+        }
       }
-      if (text.includes('water') || text.includes('scada') || text.includes('irrigation') || text.includes('pipeline')) {
-        if (pAll.includes('water') || pAll.includes('scada') || pAll.includes('hydraulic')) score += 25;
+
+      // 4. HEALTHCARE / MEDICAL / DIAGNOSTIC / BIO-MEDICAL WASTE / CLINIC
+      if (textHasAny(['health', 'diagnostic', 'hospital', 'medical', 'bio-medical', 'waste treatment', 'clinic', 'patient', 'bphu', 'health sub centre', 'blood', 'pathology'])) {
+        if (pName.includes('vimta')) {
+          baseScore += 35.0;
+          matchedReasons.push('NABL-accredited clinical reference testing, diagnostic laboratory logistics, and bio-medical waste compliance');
+          synergies.push('Vimta Labs operates NABL diagnostic workflows; GISFY provides healthcare facility GIS mapping and patient routing');
+        } else if (pName.includes('ctrls')) {
+          baseScore += 28.0;
+          matchedReasons.push('MeitY-empaneled healthcare data storage, patient EHR cloud infrastructure & HIPAA-compliant security');
+          synergies.push('CtrlS hosts sovereign clinical database; GISFY deploys healthcare management software');
+        } else if (pName.includes('tata communications')) {
+          baseScore += 26.0;
+          matchedReasons.push('Tele-medicine network infrastructure, hospital optical connectivity & secure diagnostic data transfer');
+          synergies.push('Tata Communications provides telemedicine backbone; GISFY integrates GIS clinic dispatch');
+        } else if (pName.includes('esds')) {
+          baseScore += 24.0;
+          matchedReasons.push('Government health portal auto-scaling eNlight sovereign cloud hosting');
+          synergies.push('ESDS guarantees 99.95% healthcare portal uptime; GISFY leads application delivery');
+        }
       }
-      if (text.includes('camera') || text.includes('cctv') || text.includes('server') || text.includes('control room') || text.includes('it') || text.includes('cloud')) {
-        if (pAll.includes('cloud') || pAll.includes('meity') || pAll.includes('it') || pAll.includes('telematics')) score += 22;
+
+      // 5. CCTV / SURVEILLANCE / SAFE CITY / TRAFFIC / CAMERA / POLICE
+      if (textHasAny(['cctv', 'camera', 'surveillance', 'safe city', 'traffic', 'command center', 'police', 'video', 'chauraho', 'nvr', 'dvr'])) {
+        if (pName.includes('keltron')) {
+          baseScore += 35.0;
+          matchedReasons.push('State nodal electronics manufacturer specializing in citywide CCTV surveillance, ANPR cameras, and smart traffic control');
+          synergies.push('KELTRON supplies state-approved camera hardware & optical video telemetry; GISFY renders GIS video surveillance map feeds');
+        } else if (pName.includes('tata communications')) {
+          baseScore += 32.0;
+          matchedReasons.push('Integrated Command and Control Centre (ICCC) cloud architecture with high-concurrency video surveillance feeds');
+          synergies.push('Tata Communications hosts cloud surveillance ICCC; GISFY builds spatial camera asset layers');
+        } else if (pName.includes('mapmyindia')) {
+          baseScore += 29.0;
+          matchedReasons.push('Safe city IoT telematics, emergency vehicle automated dispatch & AI traffic incident mapping');
+          synergies.push('MapmyIndia provides road navigation feeds; GISFY handles surveillance site mapping');
+        } else if (pName.includes('ctrls')) {
+          baseScore += 27.0;
+          matchedReasons.push('Rated-4 high-bandwidth storage infrastructure for municipal CCTV video evidence archival');
+          synergies.push('CtrlS guarantees 90-day video retention archival; GISFY operates security dashboard');
+        }
       }
-      if (text.includes('survey') || text.includes('dgps') || text.includes('cadastral') || text.includes('land')) {
-        if (pAll.includes('survey') || pAll.includes('dgps') || pAll.includes('cadastral')) score += 22;
+
+      // 6. ELECTRICAL / SUBSTATION / POWER GRID / GIS SUBSTATION / KV TRANSMISSION / MECHANICAL
+      if (textHasAny(['electrical', 'substation', 'gis substation', 'kv', 'transmission', 'mechanical', 'armo', 'rmo', 'e and m', 'transformer', 'overhauling', 'switchgear'])) {
+        if (pName.includes('cyient')) {
+          baseScore += 35.0;
+          matchedReasons.push('Specialized in 220/132/33KV high-voltage substation engineering, utility grid GIS asset management & SCADA');
+          synergies.push('Cyient conducts electrical substation asset modeling; GISFY delivers power distribution GIS geodatabase');
+        } else if (pName.includes('aarvee')) {
+          baseScore += 31.0;
+          matchedReasons.push('Comprehensive electrical, mechanical (E&M) and power transmission infrastructure engineering');
+          synergies.push('Aarvee Associates prepares technical maintenance DPRs; GISFY manages spatial asset inspections');
+        } else if (pName.includes('tata communications')) {
+          baseScore += 27.0;
+          matchedReasons.push('Industrial SCADA telemetry, substation IoT monitoring & secure power transmission network integration');
+          synergies.push('Tata Communications supplies telemetry gateways; GISFY visualizes real-time power flow');
+        } else if (pName.includes('secon')) {
+          baseScore += 25.0;
+          matchedReasons.push('Transmission line tower corridor alignment, profile leveling, and electrical route surveys');
+          synergies.push('SECON executes route geodetic survey; GISFY builds GIS transmission network');
+        }
       }
-      if (text.includes('civil') || text.includes('road') || text.includes('highway') || text.includes('railway') || text.includes('bridge')) {
-        if (pAll.includes('civil') || pAll.includes('infrastructure') || pAll.includes('dpr')) score += 22;
+
+      // 7. CIVIL WORKS / ROAD / HIGHWAY / BRIDGE / CAUSEWAY / DRAINAGE / PWD
+      if (textHasAny(['road', 'highway', 'causeway', 'hume pipes', 'bridge', 'pavement', 'motor road', 'dpr', 'drainage', 'culvert', 'asphalt', 'pwd', 'nhai', 'concreting'])) {
+        if (pName.includes('consulting engineers group')) {
+          baseScore += 35.0;
+          matchedReasons.push('NHAI and State PWD approved engineering consultancy for highway alignment, pavement design, and detailed project reports');
+          synergies.push('CEG delivers civil road engineering drawings & pavement evaluations; GISFY integrates corridor alignment WebGIS');
+        } else if (pName.includes('aarvee')) {
+          baseScore += 31.0;
+          matchedReasons.push('Rail, highway, bridge and civil drainage infrastructure engineering design');
+          synergies.push('Aarvee Associates provides structural bridge & drainage calculations; GISFY renders spatial site profiles');
+        } else if (pName.includes('matrix geo')) {
+          baseScore += 29.0;
+          matchedReasons.push('Linear infrastructure DPRs, DGPS highway topographic profiling, and cross-section modeling');
+          synergies.push('Matrix Geo provides linear elevation profiles; GISFY analyzes geometric alignment GIS');
+        } else if (pName.includes('geokno')) {
+          baseScore += 27.0;
+          matchedReasons.push('Mobile laser scanning (MLS) for road surface roughness, pavement distress & corridor LiDAR');
+          synergies.push('Geokno executes mobile LiDAR vehicle passes; GISFY processes 3D point clouds');
+        }
       }
-      if (p.state && p.state.toLowerCase() === stateLower) {
-        score += 8;
+
+      // 8. EMPANELMENT / CARBON CREDIT / ENVIRONMENT / CLEARANCES / ESG
+      if (textHasAny(['empanelment', 'carbon credit', 'consultancies', 'agencies', 'environment', 'clean air', 'pollution', 'clearance', 'crz', 'eia', 'esg'])) {
+        if (pName.includes('erm')) {
+          baseScore += 35.0;
+          matchedReasons.push('Global leader in carbon credit generation, verification methodology, and ESG environmental clearancing');
+          synergies.push('ERM India structures carbon offset credits & monetization; GISFY validates spatial carbon sequestration via satellite');
+        } else if (pName.includes('vimta')) {
+          baseScore += 31.0;
+          matchedReasons.push('NABET-accredited for environmental clearances, state pollution testing & environmental impact assessments');
+          synergies.push('Vimta Labs leads statutory environmental clearance filings; GISFY provides spatial EIA overlay maps');
+        } else if (pName.includes('rmsi')) {
+          baseScore += 28.0;
+          matchedReasons.push('Empaneled risk modeling consultancy for climate hazard, flood vulnerability, and environmental GIS');
+          synergies.push('RMSI models environmental hazard risks; GISFY hosts portal interfaces');
+        }
+      }
+
+      // 9. CADASTRAL / DGPS / LAND RECORDS / TOTAL STATION / DEMARCATION / REVENUE
+      if (textHasAny(['cadastral', 'dgps', 'total station', 'land records', 'revenue', 'demarcation', 'contour', 'topographical', 'boundary', 'survey of india', 'resurvey'])) {
+        if (pName.includes('marvel')) {
+          baseScore += 34.0;
+          matchedReasons.push('Survey of India Class-A certified field teams with 60+ DGPS rovers for ground boundary demarcation & cadastral mapping');
+          synergies.push('Marvel Geospatial mobilizes district survey crews; GISFY validates topology and builds revenue parcel database');
+        } else if (pName.includes('lawrence')) {
+          baseScore += 31.0;
+          matchedReasons.push('OEM manufacturer and certified calibrator of GNSS/DGPS rovers and electronic total stations');
+          synergies.push('Lawrence & Mayo guarantees calibrated field survey instruments; GISFY conducts spatial parcel analytics');
+        } else if (pName.includes('neogeo')) {
+          baseScore += 29.0;
+          matchedReasons.push('Land records modernization, cadastral resurvey, and automated land administration GIS portals');
+          synergies.push('NeoGeoInfo executes field land records digitization; GISFY hosts central portal');
+        } else if (pName.includes('kashyap')) {
+          baseScore += 29.0;
+          matchedReasons.push('Local DGPS topographic survey, contour mapping, and ground boundary verification team');
+          synergies.push('Kashyap Geo Tech executes district field ground control; GISFY generates CAD/GIS deliverables');
+        } else if (pName.includes('gis consortium')) {
+          baseScore += 27.0;
+          matchedReasons.push('Large-scale cadastral resurvey and municipal property tax GIS mapping');
+          synergies.push('GIS Consortium executes door-to-door property surveys; GISFY delivers WebGIS');
+        }
+      }
+
+      // 10. DRONE / UAV / AERIAL PHOTOGRAMMETRY / AIRBORNE LIDAR
+      if (textHasAny(['drone', 'uav', 'aerial', 'lidar', 'svamitva', 'photogrammetry', 'orthomosaic', 'unmanned'])) {
+        if (pName.includes('ideaforge')) {
+          baseScore += 35.0;
+          matchedReasons.push('DGCA Type-Certified mapping drones (SWITCH, NETRA V4+) with proven delivery of 100,000+ villages under SVAMITVA');
+          synergies.push('ideaForge supplies DGCA-certified drone hardware & flight crew; GISFY conducts photogrammetry post-processing');
+        } else if (pName.includes('garuda')) {
+          baseScore += 31.0;
+          matchedReasons.push('Fleet of 400+ DGCA-certified drones and certified remote pilots for large-area aerial surveying');
+          synergies.push('Garuda Aerospace deploys local drone survey teams; GISFY delivers GIS orthomosaic layers');
+        } else if (pName.includes('asteria')) {
+          baseScore += 31.0;
+          matchedReasons.push('DGCA Type-Certified UAV manufacturer with SkyDeck cloud analytics platform');
+          synergies.push('Asteria operates UAV flight missions; GISFY integrates SkyDeck spatial APIs');
+        } else if (pName.includes('aereo') || pName.includes('aarav')) {
+          baseScore += 30.0;
+          matchedReasons.push('Largest SVAMITVA drone survey execution contractor having mapped 25,000+ villages');
+          synergies.push('Aereo executes high-throughput drone flights; GISFY prepares spatial cadastre deliverables');
+        } else if (pName.includes('roter')) {
+          baseScore += 29.0;
+          matchedReasons.push('Authorized distributor and operator of high-end RIEGL airborne and UAV LiDAR laser scanners');
+          synergies.push('Roter supplies survey-grade LiDAR sensors; GISFY classifies raw point clouds');
+        } else if (pName.includes('skylark')) {
+          baseScore += 27.0;
+          matchedReasons.push('Drone survey analytics platform for linear infrastructure and mining corridor inspections');
+          synergies.push('Skylark provides cloud drone analytics; GISFY delivers state WebGIS integration');
+        }
+      }
+
+      // 11. SATELLITE / REMOTE SENSING / EARTH OBSERVATION / SPACE DATA
+      if (textHasAny(['satellite', 'remote sensing', 'imagery', 'earth observation', 'spectral', 'maxar', 'planet', 'cartosat', 'resourcesat', 'isro', 'change detection'])) {
+        if (pName.includes('satpalda')) {
+          baseScore += 35.0;
+          matchedReasons.push('Direct distributor of sub-meter commercial satellite constellations (Maxar 30cm, PlanetScope, Airbus Pléiades Neo)');
+          synergies.push('SATPALDA licenses and orthorectifies sub-meter satellite stereo-pairs; GISFY conducts spatial feature extraction');
+        } else if (pName.includes('newspace') || pName.includes('nsil')) {
+          baseScore += 33.0;
+          matchedReasons.push('ISRO commercial arm providing high-resolution Indian Remote Sensing (Cartosat, Resourcesat, Oceansat) satellite data');
+          synergies.push('NSIL coordinates sovereign satellite tasking; GISFY deploys spatial decision support systems');
+        } else if (pName.includes('scanpoint')) {
+          baseScore += 31.0;
+          matchedReasons.push('Developer of IGiS indigenous remote sensing and GIS software platform co-developed with ISRO');
+          synergies.push('Scanpoint Geomatics supplies IGiS image processing engine; GISFY designs customized user workflows');
+        } else if (pName.includes('rmsi')) {
+          baseScore += 27.0;
+          matchedReasons.push('Multi-temporal satellite change detection and disaster hazard risk modeling');
+          synergies.push('RMSI prepares remote sensing vulnerability indices; GISFY delivers interactive maps');
+        }
+      }
+
+      // 12. CLOUD / DATA CENTER / MEITY GOVCLOUD / SOVEREIGN HOSTING / STQC
+      if (textHasAny(['cloud', 'data center', 'server', 'hosting', 'meity', 'tier-3', 'tier-4', 'stqc', 'uptime', 'storage', 'ict infrastructure'])) {
+        if (pName.includes('yotta')) {
+          baseScore += 35.0;
+          matchedReasons.push('MeitY-empaneled sovereign Tier-IV hyperscale data center with STQC security clearance and high-performance computing');
+          synergies.push('Yotta Data Services manages sovereign Tier-IV cloud infrastructure; GISFY deploys application containers & GIS microservices');
+        } else if (pName.includes('esds')) {
+          baseScore += 33.0;
+          matchedReasons.push('MeitY-empaneled eNlight sovereign cloud with patented vertical auto-scaling for state government portals');
+          synergies.push('ESDS guarantees 99.95% portal uptime SLA; GISFY develops the GIS web application');
+        } else if (pName.includes('ctrls')) {
+          baseScore += 31.0;
+          matchedReasons.push('Rated-4 hyperscale data center operator providing MeitY-cleared disaster recovery and sovereign storage');
+          synergies.push('CtrlS provisions primary and DR server clusters; GISFY manages application deployment');
+        } else if (pName.includes('sify')) {
+          baseScore += 29.0;
+          matchedReasons.push('MeitY-empaneled cloud provider with integrated state wide area network (SWAN) telecom infrastructure');
+          synergies.push('Sify integrates secure government networking; GISFY delivers end-user GIS portals');
+        } else if (pName.includes('tata communications')) {
+          baseScore += 27.0;
+          matchedReasons.push('Enterprise cloud security, DDoS mitigation, and MeitY-empaneled infrastructure');
+          synergies.push('Tata Communications delivers cyber-security shielding; GISFY builds front-end applications');
+        }
+      }
+
+      // 13. MARINE / COASTAL / BATHYMETRIC / OCEAN / PORT / HARBOUR
+      if (textHasAny(['coastal', 'marine', 'bathymetric', 'ocean', 'port', 'harbour', 'sonar', 'estuary', 'hydrographic', 'crz clearance', 'dredging'])) {
+        if (pName.includes('iic')) {
+          baseScore += 35.0;
+          matchedReasons.push('National Hydrographic Office (NHO) certified hydrographic surveys, multibeam bathymetric sonar & marine charting');
+          synergies.push('IIC Technologies executes marine survey vessel sonar runs; GISFY prepares 3D coastal bathymetric models');
+        } else if (pName.includes('indomer')) {
+          baseScore += 33.0;
+          matchedReasons.push('Oceanographic modeling, coastal regulation zone (CRZ) clearances, and shoreline erosion tracking');
+          synergies.push('Indomer conducts hydrodynamic numerical modeling; GISFY produces statutory CRZ maps');
+        } else if (pName.includes('elcome')) {
+          baseScore += 29.0;
+          matchedReasons.push('Marine navigation aids, multibeam echo sounders, and hydrographic survey equipment integration');
+          synergies.push('Elcome provides calibrated sonar hardware; GISFY post-processes bathymetry soundings');
+        }
+      }
+
+      // 14. MINING / QUARRY / MINERAL CONCESSION / VOLUMETRIC SURVEY
+      if (textHasAny(['mining', 'mineral', 'quarry', 'lease', 'geology', 'coal', 'volumetric', 'excavation'])) {
+        if (pName.includes('aereo') || pName.includes('aarav')) {
+          baseScore += 35.0;
+          matchedReasons.push('Empaneled by major mining corporations for open-cast pit volumetric drone surveys & cut/fill calculation');
+          synergies.push('Aereo executes monthly drone volumetric flights; GISFY generates excavation reconciliation reports');
+        } else if (pName.includes('skylark')) {
+          baseScore += 31.0;
+          matchedReasons.push('Cloud-based drone mining analytics platform for stockpile volumetrics and haul road compliance');
+          synergies.push('Skylark provides automated volumetric algorithms; GISFY integrates cadastral concession bounds');
+        } else if (pName.includes('marvel')) {
+          baseScore += 29.0;
+          matchedReasons.push('DGPS mineral concession boundary lease demarcation and statutory mine plan surveying');
+          synergies.push('Marvel establishes statutory DGPS boundary pillars; GISFY produces DGMS compliance maps');
+        }
+      }
+
+      // 15. AGRICULTURE / CROP HEALTH / SOIL / KRISHI / PMFBY
+      if (textHasAny(['agriculture', 'crop', 'soil', 'farming', 'krishi', 'pmfby', 'horticulture', 'farmer'])) {
+        if (pName.includes('garuda')) {
+          baseScore += 35.0;
+          matchedReasons.push('DGCA-certified agricultural Krishi drone fleet for precision crop health scouting and micro-spraying');
+          synergies.push('Garuda executes drone field operations across rural clusters; GISFY provides spatial farm yield analytics');
+        } else if (pName.includes('vassar')) {
+          baseScore += 32.0;
+          matchedReasons.push('Satellite crop phenology, soil moisture telemetry, and automated PMFBY crop loss assessment algorithms');
+          synergies.push('Vassar Labs computes agricultural risk models; GISFY delivers farmer geoportal dashboards');
+        } else if (pName.includes('satpalda')) {
+          baseScore += 28.0;
+          matchedReasons.push('Multispectral satellite imagery (Sentinel/Planet) for vegetation index (NDVI) anomaly monitoring');
+          synergies.push('SATPALDA processes satellite spectral bands; GISFY correlates crop stress zones');
+        }
+      }
+
+      // 16. BLOCKCHAIN / TRACEABILITY / SUPPLY CHAIN / FARMER APP
+      if (textHasAny(['blockchain', 'traceability', 'organic', 'hyperledger', 'evm', 'smart contracts', 'supply chain'])) {
+        if (pName.includes('scanpoint')) {
+          baseScore += 35.0;
+          matchedReasons.push('Indigenous software engineering with enterprise blockchain smart contracts and mobile app delivery');
+          synergies.push('Scanpoint Geomatics engineers the Hyperledger/EVM traceability architecture; GISFY builds farm spatial apps');
+        } else if (pName.includes('webel')) {
+          baseScore += 31.0;
+          matchedReasons.push('State IT nodal corporation for enterprise e-governance and secure supply chain applications');
+          synergies.push('Webel provides enterprise state cloud infrastructure; GISFY implements mobile traceability frontend');
+        } else if (pName.includes('vassar')) {
+          baseScore += 29.0;
+          matchedReasons.push('Agri-food supply chain validation and farmer verification algorithms');
+          synergies.push('Vassar Labs runs supply chain analytics; GISFY maps organic certification boundaries');
+        }
+      }
+
+      // 17. 3D DIGITAL TWIN / SMART CITY / MUNICIPAL PROPERTY TAX
+      if (textHasAny(['digital twin', '3d city', 'smart city', 'property tax', 'street view 360', 'municipal', 'ulb', 'town planning'])) {
+        if (pName.includes('genesys')) {
+          baseScore += 35.0;
+          matchedReasons.push('Official 3D Digital Twin Partner for Survey of India, builder of Ayodhya 3D City Platform & municipal WebGIS');
+          synergies.push('Genesys produces high-resolution 3D city mesh & Street View 360; GISFY builds municipal tax assessment portal');
+        } else if (pName.includes('mapmyindia')) {
+          baseScore += 31.0;
+          matchedReasons.push('Comprehensive digital map layers, Street View 360 imaging & municipal navigation SDKs');
+          synergies.push('MapmyIndia supplies base map APIs & street imaging; GISFY implements municipal property workflows');
+        } else if (pName.includes('neogeo')) {
+          baseScore += 28.0;
+          matchedReasons.push('Municipal property tax geospatial database and Urban Local Body (ULB) WebGIS portals');
+          synergies.push('NeoGeoInfo executes door-to-door property GIS enumeration; GISFY integrates billing connectors');
+        }
+      }
+
+      // 18. STATE NODAL IT/ELECTRONICS CORPORATION MATCHES
+      if (stateLower === 'kerala' && pName.includes('keltron')) {
+        baseScore += 20.0;
+        matchedReasons.push('State Nodal Electronics Corporation of Kerala (KELTRON) providing statutory state backing & local technical presence');
+      } else if (stateLower === 'bihar' && pName.includes('beltron')) {
+        baseScore += 20.0;
+        matchedReasons.push('State Nodal E-Governance Corporation of Bihar (BELTRON) providing statutory state backing & local technical presence');
+      } else if (stateLower === 'west bengal' && pName.includes('webel')) {
+        baseScore += 20.0;
+        matchedReasons.push('State Nodal IT & Electronics Corporation of West Bengal (Webel) providing statutory state backing & local technical presence');
+      } else if (stateLower === 'odisha' && pName.includes('ocac')) {
+        baseScore += 20.0;
+        matchedReasons.push('State Nodal IT Directorate of Odisha (OCAC) providing statutory state backing & local technical presence');
+      } else if (stateLower === 'punjab' && pName.includes('punjab information')) {
+        baseScore += 20.0;
+        matchedReasons.push('State Nodal IT Corporation of Punjab (Punjab ICT) providing statutory state backing & local technical presence');
+      } else if (stateLower === 'andhra pradesh' && (pName.includes('kashyap') || pName.includes('marvel') || pName.includes('cyient'))) {
+        baseScore += 12.0;
+        matchedReasons.push('Local operational footprint, district survey crews, and verified field offices across Andhra Pradesh');
+      } else if (pState && stateLower && pState === stateLower) {
+        baseScore += 8.0;
+        matchedReasons.push(`Local state vendor with registered presence in ${stateName || tender?.state_name || 'the State'}`);
       } else if (p.pan_india_presence) {
-        score += 3;
+        baseScore += 2.0;
       }
 
-      const finalScore = Math.min(98.5, Math.max(68.0, score));
+      // Bound score between 62.0 and 98.5
+      const finalScore = Math.min(98.5, Math.max(62.0, baseScore));
+      const roundedScore = Math.round(finalScore * 10) / 10;
+
+      let tierClass = 'tier-3';
+      let matchCat = '🤝 Technical Specialist Partner';
+      if (roundedScore >= 90.0) {
+        tierClass = 'tier-1';
+        matchCat = '⭐ Tier 1 Lead Match';
+      } else if (roundedScore >= 80.0) {
+        tierClass = 'tier-2';
+        matchCat = '💎 High Synergy JV Partner';
+      }
+
+      const specificWhy = matchedReasons.length > 0
+        ? `Matched for Tender #${tender.tender_id || tender.id}: ${matchedReasons[0]}`
+        : `Pre-qualified consortium partner with specialized capabilities in ${p.primary_domain || 'Geospatial Engineering'}.`;
+
+      const synergyScope = synergies.length > 0
+        ? synergies[0]
+        : `Joint Venture partnership combining GISFY's GIS/Proposal capabilities with ${p.short_name || p.name}'s execution team.`;
+
       return {
         ...p,
-        tender_match_score: finalScore,
-        match_tier: finalScore >= 90 ? 'tier-1' : finalScore >= 80 ? 'tier-2' : 'tier-3',
-        match_category: finalScore >= 90 ? '⭐ Tier 1 Lead Match' : finalScore >= 80 ? '💎 High Synergy JV' : '🤝 Specialist Partner',
-        specific_why: `Matched for Tender #${tender.tender_id}: Fulfills specialized ${p.primary_domain} technical scope.`
+        tender_match_score: roundedScore,
+        match_tier: tierClass,
+        match_category: matchCat,
+        specific_why: specificWhy,
+        why_needed: specificWhy,
+        synergy_scope: synergyScope
       };
     });
 
-    scored.sort((a, b) => b.tender_match_score - a.tender_match_score);
+    // Sort by tender_match_score desc, then partner rating desc, then partner name asc
+    scored.sort((a, b) => {
+      if (b.tender_match_score !== a.tender_match_score) {
+        return b.tender_match_score - a.tender_match_score;
+      }
+      if ((b.rating || 0) !== (a.rating || 0)) {
+        return (b.rating || 0) - (a.rating || 0);
+      }
+      return (a.name || '').localeCompare(b.name || '');
+    });
+
     return scored.slice(0, 3);
-  }, [partnersList]);
+  }, [allPartnersDirectory, partnersList]);
 
 
 
