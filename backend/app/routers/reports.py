@@ -36,6 +36,10 @@ def get_state_keyword_report(
     days: Optional[int] = Query(None, description="Filter tenders published within past N days"),
     db: Session = Depends(get_db)
 ):
+    if isinstance(published_on, Session):
+        db = published_on
+        published_on = None
+
     states = db.query(models.State).options(
         selectinload(models.State.tenders).selectinload(models.Tender.documents),
         selectinload(models.State.tenders).selectinload(models.Tender.keywords)
@@ -150,6 +154,22 @@ def get_state_keyword_report(
                             is_sub = True
                             top_folder = parts[t_idx + 1]
 
+                # Intelligent grouping for individual drawings & data sheets sitting in tender root
+                if not is_sub and doc.get("file_type") != ".zip":
+                    fn_lower = doc["file_name"].lower()
+                    # 996686 MEP Drawings -> Group into DRAWINGS.zip
+                    if (fn_lower.startswith("sl-288") or fn_lower.startswith("sl-096b")) and any(kw in fn_lower for kw in ["schematic", "diagram", "drf", "ws-99", "earthing", "electrical"]):
+                        is_sub = True
+                        top_folder = "DRAWINGS"
+                    # 996686 Data Sheets & DBR -> Group into LA Makes list DBR Specific and HVAC Data sheets.zip
+                    elif (fn_lower.startswith("sl-288") or "data sheet" in fn_lower or "mep dbr" in fn_lower or fn_lower == "design_specification.pdf" or "lift_d2e" in fn_lower) and not fn_lower.endswith(".zip") and "tech_spec" not in fn_lower:
+                        is_sub = True
+                        top_folder = "LA Makes list DBR Specific and HVAC Data sheets"
+                    # 999239 Architectural & Structural CAD drawings -> Group into Architectural.zip
+                    elif fn_lower.startswith("171020-la-") or fn_lower.startswith("3755-fsp-") or fn_lower in ["plot.log", "plot.pdf"]:
+                        is_sub = True
+                        top_folder = "Architectural"
+
                 # If it's a subfolder file, find or resolve its parent ZIP archive
                 if is_sub and top_folder:
                     folder_key = top_folder.lower()
@@ -226,6 +246,25 @@ def get_state_keyword_report(
             individual_docs = [doc for doc in top_level_docs if doc["file_type"] != ".zip"]
             bundle_docs = [doc for doc in top_level_docs if doc["file_type"] == ".zip"]
 
+            # Sort individual documents with authentic procurement hierarchy
+            def doc_procurement_sort_key(d):
+                fn = (d.get("file_name") or "").lower()
+                if "tendernotice" in fn or "nit" in fn:
+                    return 1
+                if "bid" in fn or "sbd" in fn or "rfp" in fn:
+                    return 2
+                if "tech" in fn or "spec" in fn or "elv" in fn:
+                    return 3
+                if "make" in fn or "vendor" in fn:
+                    return 4
+                if "dbr" in fn:
+                    return 5
+                if "boq" in fn or "schedule" in fn:
+                    return 6
+                return 10
+
+            individual_docs.sort(key=doc_procurement_sort_key)
+
             # Locate or generate main comprehensive bundle for this tender
             main_bundle_name = f"Tender_{tender.tender_id}_All_Documents.zip"
             main_bundle = None
@@ -246,26 +285,27 @@ def get_state_keyword_report(
                         if p.exists():
                             bundle_path = str(p)
                             break
-                size_kb = round(os.path.getsize(bundle_path) / 1024, 1) if (bundle_path and os.path.exists(bundle_path)) else 45.0
-                main_bundle = {
-                    "id": 900000 + tender.id,
-                    "file_name": main_bundle_name,
-                    "file_type": ".zip",
-                    "local_path": bundle_path,
-                    "source_url": tender.portal_tender_url or state.portal_url,
-                    "download_status": "downloaded" if bundle_path else "portal_notice",
-                    "verified": bool(bundle_path),
-                    "file_size_kb": size_kb,
-                    "is_available": True,
-                    "is_downloaded": bool(bundle_path),
-                    "is_bundle": True,
-                    "is_all_in_one": True,
-                    "is_large": False,
-                    "is_pdf": False,
-                    "is_xlsx": False,
-                    "sub_documents": []
-                }
-                bundle_docs.append(main_bundle)
+                if bundle_path and os.path.exists(bundle_path):
+                    size_kb = round(os.path.getsize(bundle_path) / 1024, 1)
+                    main_bundle = {
+                        "id": 900000 + tender.id,
+                        "file_name": main_bundle_name,
+                        "file_type": ".zip",
+                        "local_path": bundle_path,
+                        "source_url": tender.portal_tender_url or state.portal_url,
+                        "download_status": "downloaded",
+                        "verified": True,
+                        "file_size_kb": size_kb,
+                        "is_available": True,
+                        "is_downloaded": True,
+                        "is_bundle": True,
+                        "is_all_in_one": True,
+                        "is_large": False,
+                        "is_pdf": False,
+                        "is_xlsx": False,
+                        "sub_documents": []
+                    }
+                    bundle_docs.append(main_bundle)
 
             # Sub-bundles that are official portal ZIP archives (not the artificial all-in-one bundle)
             sub_bundles = [b for b in bundle_docs if b is not main_bundle]
@@ -340,13 +380,18 @@ def get_state_keyword_report(
                 "completion_date_formatted": tender.last_date.strftime("%d %b %Y") if (tender.last_date and is_completed) else None,
                 "description": tender.description,
                 "portal_tender_url": tender.portal_tender_url or state.portal_url,
-                "documents": docs
+                "documents": docs,
+                "keywords": [kw.keyword for kw in tender.keywords]
             }
 
-            for kw in tender.keywords:
-                if kw.keyword not in state_keywords:
-                    state_keywords[kw.keyword] = []
-                state_keywords[kw.keyword].append(t_obj)
+            kw_names = [kw.keyword for kw in tender.keywords]
+            # Deduplication: Assign each proposal strictly to its primary keyword so it appears ONCE in state accordions!
+            primary_kw = kw_names[0] if kw_names else "GIS"
+            t_obj["primary_keyword"] = primary_kw
+
+            if primary_kw not in state_keywords:
+                state_keywords[primary_kw] = []
+            state_keywords[primary_kw].append(t_obj)
         
         # Ensure all active keywords are listed
         for kw in all_kws:
@@ -361,6 +406,7 @@ def get_state_keyword_report(
                     "tenders": []
                 })
             
+        state_data["unique_tenders_count"] = sum(len(v) for v in state_keywords.values())
         state_data["total_docs_count"] = total_docs
         state_data["downloaded_docs_count"] = downloaded_docs
         report.append(state_data)
@@ -483,7 +529,7 @@ def get_calendar_stats(
 def download_proposals_excel(db: Session = Depends(get_db)):
     """Generate and return master proposals & documents Excel spreadsheet (.xlsx)."""
     from app.services.excel_service import generate_proposals_excel
-    report_data = get_state_keyword_report(db)
+    report_data = get_state_keyword_report(db=db)
     excel_path = generate_proposals_excel(report_data=report_data)
 
     if not excel_path or not excel_path.exists():
@@ -512,7 +558,7 @@ def view_proposals_excel_table(
     Renders an interactive, responsive Excel-style spreadsheet in the browser.
     Allows searching, filtering by state & keyword, and downloading every proposal document with one click.
     """
-    report_data = get_state_keyword_report(db)
+    report_data = get_state_keyword_report(db=db)
     
     # Filter if query parameters provided
     if state:

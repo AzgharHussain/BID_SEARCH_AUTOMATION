@@ -55,6 +55,8 @@ class Tender(Base):
     state = relationship("State", back_populates="tenders")
     documents = relationship("Document", back_populates="tender")
     keywords = relationship("Keyword", secondary="tender_keywords")
+    adb_detail = relationship("AdbOpportunityDetail", back_populates="tender", uselist=False, cascade="all, delete-orphan")
+    adb_tracker = relationship("AdbProposalTrack", back_populates="tender", uselist=False, cascade="all, delete-orphan")
 
 class Document(Base):
     __tablename__ = "documents"
@@ -66,8 +68,15 @@ class Document(Base):
     source_url = Column(Text)
     local_path = Column(Text)
     verified = Column(Boolean, default=False)
-    download_status = Column(String, default="pending") # pending / downloaded / skipped_captcha
+    download_status = Column(String, default="pending") # pending / downloaded / skipped_captcha / failed
     portal_size_kb = Column(Float, nullable=True)
+    file_size_bytes = Column(Integer, nullable=True)
+    sha256_hash = Column(String, nullable=True)
+    doc_category = Column(String, default="ATTACHMENT") # TOR / RFP / CSRN_NOTICE / EOI_FORM / ATTACHMENT / ADDENDUM
+    doc_version = Column(String, default="1.0")
+    access_status = Column(String, default="Verified") # Verified / Verification Pending / Missing / Restricted / Failed
+    checksum_verified = Column(Boolean, default=False)
+    retrieval_timestamp = Column(DateTime, default=datetime.utcnow)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     tender = relationship("Tender", back_populates="documents")
@@ -131,4 +140,171 @@ class TenderCollaboration(Base):
 
     tender = relationship("Tender")
     partner = relationship("Partner")
+
+
+class CollaborationEmail(Base):
+    __tablename__ = "collaboration_emails"
+    __table_args__ = (UniqueConstraint('tender_id', 'partner_id', name='uq_email_tender_partner'),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    tender_id = Column(Integer, ForeignKey("tenders.id"), nullable=True, index=True)
+    partner_id = Column(Integer, ForeignKey("partners.id"), nullable=True, index=True)
+
+    recipient_name = Column(String, nullable=True)
+    recipient_email = Column(String, nullable=False, index=True)
+    company_name = Column(String, nullable=False, index=True)
+
+    subject = Column(String, nullable=False)
+    body_text = Column(Text, nullable=False)
+    body_html = Column(Text, nullable=False)
+
+    project_name = Column(String, nullable=False)
+    project_overview = Column(Text, nullable=False)
+    match_score = Column(Float, default=85.0)
+    selection_reason = Column(Text, nullable=True)
+    required_expertise = Column(Text, nullable=True)
+
+    # Status: 'Draft', 'Sending', 'Provider Accepted', 'Failed', 'Delivery Confirmed'
+    status = Column(String, default="Draft", index=True)
+    approval_status = Column(String, default="pending_approval", index=True)  # 'pending_approval', 'approved', 'rejected'
+    is_draft = Column(Boolean, default=True)
+
+    approved_at = Column(DateTime, nullable=True)
+    sent_at = Column(DateTime, nullable=True, index=True)
+    follow_up_date = Column(DateTime, nullable=True, index=True)
+    follow_up_count = Column(Integer, default=0)
+
+    # Response tracking: 'none', 'replied', 'interested', 'declined', 'opted_out'
+    response_status = Column(String, default="none", index=True)
+    response_received_at = Column(DateTime, nullable=True)
+    response_snippet = Column(Text, nullable=True)
+
+    # Live Provider & Verification tracking (Microsoft Graph OAuth2, Google, SMTP)
+    provider = Column(String, nullable=True)
+    provider_status_code = Column(Integer, nullable=True)
+    provider_message_id = Column(String, nullable=True)
+    provider_response_raw = Column(Text, nullable=True)
+    sent_folder_verified = Column(Boolean, default=False)
+    delivery_verified = Column(Boolean, default=False)
+    delivery_verified_at = Column(DateTime, nullable=True)
+    is_test_email = Column(Boolean, default=False)
+
+    gmail_message_id = Column(String, nullable=True)
+    gmail_thread_id = Column(String, nullable=True)
+    gmail_draft_id = Column(String, nullable=True)
+    retry_count = Column(Integer, default=0)
+    max_retries = Column(Integer, default=3)
+    last_error = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tender = relationship("Tender")
+    partner = relationship("Partner")
+
+
+class CollaborationWorkflowLog(Base):
+    __tablename__ = "collaboration_workflow_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    cycle_type = Column(String, default="daily_scheduled")  # 'daily_scheduled', 'manual_trigger'
+    started_at = Column(DateTime, default=datetime.utcnow)
+    finished_at = Column(DateTime, nullable=True)
+    tenders_analyzed = Column(Integer, default=0)
+    partners_matched = Column(Integer, default=0)
+    drafts_created = Column(Integer, default=0)
+    emails_sent = Column(Integer, default=0)
+    replies_checked = Column(Integer, default=0)
+    follow_ups_flagged = Column(Integer, default=0)
+    errors_count = Column(Integer, default=0)
+    status = Column(String, default="running")  # 'running', 'success', 'completed_with_errors', 'failed'
+    log_details = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class AdbOpportunityDetail(Base):
+    __tablename__ = "adb_opportunity_details"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tender_id = Column(Integer, ForeignKey("tenders.id"), unique=True, nullable=False, index=True)
+    csrn_id = Column(String, index=True, nullable=False)
+    selection_number = Column(String, index=True, nullable=True)
+    package_number = Column(String, index=True, nullable=True)
+    project_number = Column(String, index=True, nullable=True)
+    country = Column(String, index=True, nullable=True)
+    executing_agency = Column(Text, nullable=True)
+    implementing_agency = Column(Text, nullable=True)
+    project_sector = Column(String, index=True, nullable=True)
+    consultant_type = Column(String, nullable=True)  # 'Firm' / 'Individual'
+    consultant_source = Column(String, nullable=True)  # 'International' / 'National' / 'International/National'
+    selection_method = Column(String, nullable=True)  # 'QCBS', 'FBS', 'QBS', 'CQS', 'ICS', etc.
+    technical_proposal_type = Column(String, nullable=True)  # 'Full Technical Proposal (FTP)', 'STP', 'BTP'
+    budget_amount = Column(Float, nullable=True)
+    budget_currency = Column(String, default="USD")
+    budget_type = Column(String, nullable=True)  # 'Estimated' / 'Maximum'
+    engagement_period_months = Column(Float, nullable=True)
+    advance_action = Column(Boolean, default=False)
+    approval_number = Column(String, nullable=True)
+    approval_date = Column(String, nullable=True)
+    estimated_commencement_date = Column(String, nullable=True)
+    open_to_non_member = Column(Boolean, default=False)
+    publication_date_str = Column(String, nullable=True)
+    eoi_deadline_str = Column(String, nullable=True)  # Manila local time as published
+    eoi_deadline_ist = Column(DateTime, nullable=True)  # Exact IST calculated when timezone verified
+    proposal_deadline = Column(DateTime, nullable=True)
+    source_timezone = Column(String, default="Manila local time (UTC+8)")
+    scope_of_work = Column(Text, nullable=True)
+    eligibility_criteria = Column(Text, nullable=True)
+    qualification_requirements = Column(Text, nullable=True)
+    jv_consortium_rules = Column(Text, nullable=True)
+    contact_officer = Column(String, nullable=True)
+    contact_email = Column(String, nullable=True)
+    official_source_url = Column(Text, nullable=True)
+    raw_details_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tender = relationship("Tender", back_populates="adb_detail")
+
+
+class AdbProposalTrack(Base):
+    __tablename__ = "adb_proposal_tracks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tender_id = Column(Integer, ForeignKey("tenders.id"), unique=True, nullable=False, index=True)
+
+    # Pipeline Stages:
+    # 'Opportunity Identified', 'Under Review', 'EOI In Preparation', 'EOI Submitted',
+    # 'Shortlisted', 'RFP Received', 'Technical Proposal', 'Financial Proposal',
+    # 'Submitted', 'Evaluation', 'Awarded / Not Awarded'
+    pipeline_stage = Column(String, default="Opportunity Identified", index=True)
+    stage_status = Column(String, default="manual_entry")  # 'source_verified', 'manual_entry', 'unavailable'
+    submission_reference = Column(String, nullable=True)
+    cms_acknowledgement_id = Column(String, nullable=True)
+    lead_partner_name = Column(String, nullable=True)
+    internal_notes = Column(Text, nullable=True)
+    target_submission_date = Column(DateTime, nullable=True)
+    history_json = Column(Text, nullable=True)
+    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    tender = relationship("Tender", back_populates="adb_tracker")
+
+
+class AdbSyncLog(Base):
+    __tablename__ = "adb_sync_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sync_type = Column(String, default="scheduled")  # 'scheduled', 'manual_now', 'retry_failed'
+    started_at = Column(DateTime, default=datetime.utcnow)
+    finished_at = Column(DateTime, nullable=True)
+    opportunities_found = Column(Integer, default=0)
+    opportunities_added = Column(Integer, default=0)
+    opportunities_updated = Column(Integer, default=0)
+    documents_downloaded = Column(Integer, default=0)
+    documents_missing = Column(Integer, default=0)
+    documents_failed = Column(Integer, default=0)
+    status = Column(String, default="running")  # 'running', 'success', 'completed_with_errors', 'failed'
+    error_message = Column(Text, nullable=True)
+    summary_json = Column(Text, nullable=True)
 

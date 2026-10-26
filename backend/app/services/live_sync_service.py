@@ -37,7 +37,7 @@ LIVE_PORTAL_NEW_TENDERS_FEED = [
         "state_name": "Andhra Pradesh",
         "portal_url": "https://tender.apeprocurement.gov.in",
         "department": "MUNICIPAL ADMINISTRATION & URBAN DEVELOPMENT-APUIAML",
-        "keyword": "GIS",
+        "keyword": "Spatial",
         "tender_id": "1004120",
         "title": "Comprehensive GIS-Based Property Tax Geo-Spatial Survey and Urban Local Body Asset Mapping",
         "description": "IFB No: APUIAML/GIS/2026/02 | GIS drone mapping, unique door-to-door property geo-tagging, satellite imagery classification, and web GIS dashboard development.",
@@ -310,7 +310,7 @@ class LiveSyncService:
                 description=candidate["description"],
                 published_date=pub_date,
                 last_date=due_date,
-                portal_tender_url=f"{state.portal_url}/tender/{candidate['tender_id']}"
+                portal_tender_url=state.portal_url or "https://eprocure.gov.in"
             )
             new_tender.keywords.append(keyword)
             db.add(new_tender)
@@ -370,7 +370,9 @@ class LiveSyncService:
 
             try:
                 from app.services.email_service import send_automatic_new_proposal_alert
-                send_automatic_new_proposal_alert(tender_info, recipient="swethagisfy@gmail.com")
+                send_automatic_new_proposal_alert(tender_info)
+                from app.services.partner_service import auto_dispatch_collaboration_email_for_tender
+                auto_dispatch_collaboration_email_for_tender(db, new_tender.id)
             except Exception as mail_err:
                 log_scraper_event(f"[ALERT EMAIL] Automatic email dispatch: {mail_err}", "info")
 
@@ -444,7 +446,7 @@ class LiveSyncService:
             description=full_desc,
             published_date=pub_date,
             last_date=due_date,
-            portal_tender_url=f"{target_state.portal_url or 'https://eprocure.gov.in'}/tender/{seq_id}"
+            portal_tender_url=target_state.portal_url or 'https://eprocure.gov.in'
         )
         new_tender.keywords.append(kw_obj)
         db.add(new_tender)
@@ -502,7 +504,9 @@ class LiveSyncService:
 
         try:
             from app.services.email_service import send_automatic_new_proposal_alert
-            send_automatic_new_proposal_alert(tender_info, recipient="swethagisfy@gmail.com")
+            send_automatic_new_proposal_alert(tender_info)
+            from app.services.partner_service import auto_dispatch_collaboration_email_for_tender
+            auto_dispatch_collaboration_email_for_tender(db, new_tender.id)
         except Exception as mail_err:
             log_scraper_event(f"[ALERT EMAIL] Automatic email dispatch: {mail_err}", "info")
 
@@ -552,9 +556,30 @@ class LiveSyncService:
                 )
                 db.add(run)
             db.commit()
+            new_tenders_added = 0
+
+            # Ingest live tenders & documents directly from official AP State e-Procurement portal
+            try:
+                from app.services.ap_live_downloader import run_ap_live_ingestion
+                ap_res = run_ap_live_ingestion(limit=2, db=db)
+                if ap_res.get("ingested_count", 0) > 0:
+                    new_tenders_added += ap_res["ingested_count"]
+            except Exception as ap_err:
+                log_scraper_event(f"AP live crawler cycle notice: {ap_err}", "info")
+
+            # Autonomous ADB CMS Portal Check: ingest newly published consulting notices from cms.adb.org
+            try:
+                import asyncio
+                from app.services.adb_cms_connector import adb_connector
+                adb_res = asyncio.run(adb_connector.sync_opportunities(max_count=5, sync_type="scheduled"))
+                if adb_res.get("opportunities_added", 0) > 0:
+                    new_tenders_added += adb_res["opportunities_added"]
+                    log_scraper_event(f"[ADB CMS LIVE] Detected and ingested {adb_res['opportunities_added']} newly published consulting opportunities from cms.adb.org!", "info")
+            except Exception as adb_sync_err:
+                log_scraper_event(f"ADB CMS live check notice: {adb_sync_err}", "info")
 
             # Ingest any newly uploaded tenders & documents from portal feeds
-            new_tenders_added = self._ingest_new_portal_uploads(db)
+            new_tenders_added += self._ingest_new_portal_uploads(db)
 
             # Automatically synchronize proposal lifecycle statuses
             db.query(models.Tender).filter(

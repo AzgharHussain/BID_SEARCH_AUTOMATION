@@ -1,10 +1,23 @@
 [
   {
-    "email": "swethanjali@gisfy.co.in",
-    "name": "Swethanjali (GISFY)",
-    "role": "Executive Lead & Verifier",
-    "added_at": "2026-10-20T21:55:00"
+    "email": "farhath@gisfy.co.in",
+    "name": "Farhath Bakka",
+    "role": "Business Development Executive",
+    "added_at": "2026-10-23T10:00:00"
   },
+  {
+    "email": "support@gisfy.co.in",
+    "name": "GISFY Support Team",
+    "role": "Support & Outreach Operations",
+    "added_at": "2026-10-24T21:42:00"
+  },
+  {
+    "email": "bidding@gisfy.co.in",
+    "name": "GISFY Bidding Team",
+    "role": "Bidding & Strategic Partnerships",
+    "added_at": "2026-10-22T10:00:00"
+  },
+
   {
     "email": "swethagisfy@gmail.com",
     "name": "Swetha (GISFY)",

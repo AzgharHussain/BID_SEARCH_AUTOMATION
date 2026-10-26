@@ -226,7 +226,10 @@ def test_smtp_connection_endpoint(payload: SmtpTestPayload):
     """Send an immediate verification email to test SMTP connectivity."""
     target_email = payload.target_email or "swethagisfy@gmail.com"
     res = test_smtp_connection(target_email=target_email)
-    if res.get("status") == "error":
-        raise HTTPException(status_code=400, detail=res.get("message", "SMTP test failed."))
+    if res.get("status") == "error" or res.get("delivery_mode") != "smtp":
+        raise HTTPException(
+            status_code=400,
+            detail=res.get("error") or res.get("message") or "SMTP delivery failed. Email was only saved locally."
+        )
     return res
 

@@ -7,6 +7,8 @@ from sqlalchemy import or_
 
 from app.models import models
 from app.schemas import schemas
+from app.services.adb_partners_data import ADB_PARTNERS_DATA
+from app.services.additional_genuine_partners_data import ADDITIONAL_GENUINE_PARTNERS_DATA
 
 # Comprehensive initial seed dataset representing prominent Indian geospatial, survey, IT, and infra firms
 INITIAL_PARTNERS_SEED = [
@@ -978,12 +980,15 @@ INITIAL_PARTNERS_SEED = [
     }
 ]
 
+# Combined pool of 105 verified partners: 42 Indian firms + 15 multilateral ADB consulting firms + 48 additional genuine domestic & multilateral partners
+ALL_PARTNERS_POOL = INITIAL_PARTNERS_SEED + ADB_PARTNERS_DATA + ADDITIONAL_GENUINE_PARTNERS_DATA
+
 
 def ensure_partners_seeded(db: Session):
-    """Sync 100% verified real Indian partners, purging obsolete mock data and refreshing records."""
+    """Sync 100% verified real Indian and ADB multilateral partners, refreshing records."""
     models.Base.metadata.create_all(bind=db.get_bind())
     
-    valid_names = {p["name"] for p in INITIAL_PARTNERS_SEED}
+    valid_names = {p["name"] for p in ALL_PARTNERS_POOL}
     
     # 1. Purge obsolete / synthetic partners
     obsolete_partners = db.query(models.Partner).filter(~models.Partner.name.in_(valid_names)).all()
@@ -998,7 +1003,7 @@ def ensure_partners_seeded(db: Session):
     existing = {p.name: p for p in db.query(models.Partner).all()}
     changed = False
 
-    for p_data in INITIAL_PARTNERS_SEED:
+    for p_data in ALL_PARTNERS_POOL:
         name = p_data["name"]
         if name not in existing:
             partner = models.Partner(**p_data)
@@ -1096,6 +1101,111 @@ def compute_partner_match(tender: models.Tender, partner: models.Partner) -> Dic
     base_score = 60.0
     matched_reasons = []
     synergies = []
+
+    # 0. ASIAN DEVELOPMENT BANK (ADB CMS) / MULTILATERAL CONSULTING ASSIGNMENTS
+    if "adb" in t_state_lower or any(w in tender_text for w in ["adb", "csrn", "asian development bank", "multilateral", "loan e-", "ta-", "grant-"]):
+        # ADB International Empaneled Partners
+        if "smec" in p_name:
+            base_score += 37.0
+            matched_reasons.append("ADB Empaneled International Lead Consultant with 500+ multilateral projects across transport, water, and urban infrastructure")
+            synergies.append("SMEC International leads international procurement & FIDIC contract administration; GISFY executes WebGIS platform and spatial database")
+        elif "mott" in p_name:
+            base_score += 37.0
+            matched_reasons.append("ADB Registered International Consulting Organization specializing in climate resilience, smart water GIS & multilateral advisory")
+            synergies.append("Mott MacDonald leads climate modeling & safeguards; GISFY builds spatial analytics dashboards")
+        elif "egis" in p_name:
+            base_score += 36.5
+            matched_reasons.append("ADB & World Bank empaneled Project Management & Construction Supervision Consultant (PMCSC) for urban and transport infrastructure")
+            synergies.append("Egis India provides PMCSC engineering supervision; GISFY manages GIS corridor asset inventory")
+        elif "wsp" in p_name:
+            base_score += 36.5
+            matched_reasons.append("Leading global engineering & environmental consulting firm with extensive ADB multilateral project delivery credentials")
+            synergies.append("WSP provides environmental safeguards & digital twin integration; GISFY implements cloud geodatabase")
+        elif "cowi" in p_name:
+            base_score += 36.0
+            matched_reasons.append("ADB Registered International Consultant for airborne LiDAR, marine, transport corridor & geotechnical spatial survey")
+            synergies.append("COWI leads high-precision aerial LiDAR surveys; GISFY prepares spatial vector GIS datasets")
+        elif "nippon" in p_name or "koei" in p_name:
+            base_score += 37.0
+            matched_reasons.append("ADB & JICA Premier International Engineering Consultant for water resources GIS, river basin flood modeling & disaster management")
+            synergies.append("Nippon Koei provides international water resources team leadership; GISFY builds real-time flood monitoring geoportals")
+        elif "oriental" in p_name or "oc global" in p_name:
+            base_score += 36.0
+            matched_reasons.append("ADB Empaneled International Infrastructure & Transport Consultant for multi-modal corridor mapping and urban mobility")
+            synergies.append("OC Global leads multilateral transport engineering; GISFY delivers spatial transit GIS workflows")
+        elif "dhi" in p_name:
+            base_score += 36.5
+            matched_reasons.append("Global water environment specialist and author of MIKE hydro-numerical modeling suite for ADB water and coastal assignments")
+            synergies.append("DHI executes hydraulic flood simulations; GISFY provides WebGIS mapping interfaces")
+        elif "haskoning" in p_name:
+            base_score += 36.0
+            matched_reasons.append("International engineering consultancy for climate-resilient water technology, coastal protection, and maritime GIS")
+            synergies.append("Royal HaskoningDHV delivers coastal engineering; GISFY builds spatial marine GIS database")
+        elif "tata consulting engineers" in p_name:
+            base_score += 35.5
+            matched_reasons.append("Premier Indian engineering consultancy with extensive multilateral track record across mega infrastructure and power")
+            synergies.append("TCE provides comprehensive multi-disciplinary engineering; GISFY provides spatial project tracking")
+        elif "wapcos" in p_name:
+            base_score += 36.0
+            matched_reasons.append("Central PSU & premier ADB/World Bank empaneled consultant for international water resources, irrigation & hydropower")
+            synergies.append("WAPCOS provides international hydrology credentials & key experts; GISFY delivers WebGIS analytical geodatabase")
+        elif "arup" in p_name:
+            base_score += 36.5
+            matched_reasons.append("ADB Registered International Consulting Organization specializing in climate resilience, smart transit & digital twins")
+            synergies.append("Arup leads multilateral infrastructure advisory & master planning; GISFY implements spatial digital twin analytics")
+        elif "rites" in p_name:
+            base_score += 35.5
+            matched_reasons.append("Leading transport infrastructure and railway consultancy with extensive ADB and international project portfolio")
+            synergies.append("RITES leads transport planning and engineering review; GISFY manages spatial corridor geodatabase")
+        elif "meinhardt" in p_name:
+            base_score += 35.0
+            matched_reasons.append("International consulting engineering firm for urban master planning, infrastructure design, and ADB urban programs")
+            synergies.append("Meinhardt provides urban planning and structural design; GISFY delivers 3D city GIS platform")
+        elif "gopa" in p_name:
+            base_score += 35.0
+            matched_reasons.append("Leading European development consultancy firm managing ADB and multilateral institutional strengthening contracts")
+            synergies.append("GOPA provides multilateral project leadership; GISFY implements spatial monitoring portals")
+        elif "niras" in p_name:
+            base_score += 35.0
+            matched_reasons.append("International multidisciplinary consultancy for environmental management, climate change adaptation, and natural resources")
+            synergies.append("NIRAS conducts environmental impact assessments; GISFY develops geospatial monitoring systems")
+        elif any(w in tender_text for w in ["water", "flood", "river", "irrigation", "drainage", "sanitation"]):
+            if "ceinsys" in p_name:
+                base_score += 31.0
+                matched_reasons.append("ADB municipal smart water distribution, SCADA telemetry, and GIS utility network consultant")
+                synergies.append("Ceinsys Tech provides hydraulic telemetry; GISFY develops cloud geospatial portal")
+        elif any(w in tender_text for w in ["environment", "climate", "resilience", "esg", "safeguard", "waste", "circular"]):
+            if "erm" in p_name:
+                base_score += 36.0
+                matched_reasons.append("Global multidisciplinary environmental, social safeguards (ESS), circular economy, and climate resilience consultant for ADB operations")
+                synergies.append("ERM India provides ADB environmental & social framework compliance; GISFY models spatial climate risk and environmental datasets")
+            elif "vimta" in p_name:
+                base_score += 32.0
+                matched_reasons.append("NABET-accredited environmental impact assessment (EIA) and ecological baseline expert for multilateral infrastructure")
+                synergies.append("Vimta Labs leads environmental baselines; GISFY prepares spatial GIS thematic maps")
+        elif any(w in tender_text for w in ["transport", "railway", "rail", "road", "highway", "urban", "bridge"]):
+            if "aarvee" in p_name:
+                base_score += 36.0
+                matched_reasons.append("ADB & World Bank funded multi-modal transport, railway modernization, and civil infrastructure consultancy")
+                synergies.append("Aarvee Associates provides certified transport engineering & international experts; GISFY operates spatial route alignment & corridor GIS")
+            elif "consulting engineers group" in p_name:
+                base_score += 33.0
+                matched_reasons.append("Premier highway, railway, and metro civil infrastructure engineering consultancy with multilateral project credentials")
+                synergies.append("CEG delivers structural calculations & design reviews; GISFY provides spatial site monitoring")
+        elif any(w in tender_text for w in ["power", "energy", "solar", "substation", "transmission"]):
+            if "cyient" in p_name:
+                base_score += 36.0
+                matched_reasons.append("Global engineering consultancy specializing in utility power transmission, substation GIS asset management, and grid modernization")
+                synergies.append("Cyient conducts power grid asset modeling; GISFY delivers spatial electrical geodatabase")
+        else:
+            if "rmsi" in p_name:
+                base_score += 35.0
+                matched_reasons.append("Global geospatial services and disaster risk mitigation consultancy with extensive ADB & World Bank project execution track record")
+                synergies.append("RMSI brings ADB multilateral project delivery credentials; GISFY provides agile software engineering and GIS processing")
+            elif "genesys" in p_name:
+                base_score += 30.0
+                matched_reasons.append("3D Digital Twin and enterprise spatial geodatabase consultant for urban modernization")
+                synergies.append("Genesys produces 3D spatial models; GISFY delivers cloud-based stakeholder portal")
 
     # 1. WATER RESOURCES / PIPELINE / AMRUT / SCADA / DRAINAGE / IRRIGATION / RESERVOIR
     if any(w in tender_text for w in ["water", "pipeline", "scada", "amrut", "jal jeevan", "irrigation", "canal", "reservoir", "aquaculture", "hydraulic", "drainage", "hydrology", "dam", "flood", "pumping", "belapur", "nerul", "turbhe", "vashi"]):
@@ -1542,14 +1652,8 @@ def search_partners_for_tender(
     # Sort by match score descending
     matched_results.sort(key=lambda x: x["match_score"], reverse=True)
 
-    # Filter to only show high matches (score >= min_score, e.g. 80%)
-    if min_score is not None and min_score > 0:
-        filtered_results = [p for p in matched_results if p["match_score"] >= min_score]
-        if len(filtered_results) < 3 and matched_results:
-            # Fallback to top ranked candidate partners so user always gets matched consortium partners
-            filtered_results = matched_results[:8]
-    else:
-        filtered_results = matched_results
+    # Strictly guarantee top 10 recommended partners for every proposal
+    filtered_results = matched_results[:10]
 
     return {
         "tender": {
@@ -1617,57 +1721,39 @@ def generate_outreach_proposal(db: Session, payload: schemas.OutreachProposalReq
     dept_name = tender.department or f"State Government of {state_name}"
     due_date_str = tender.last_date.strftime("%d %b %Y, %I:%M %p") if tender.last_date else "As per official portal notice"
 
-    subject = f"[Consortium / JV Opportunity] Tender #{tender.tender_id} - {state_name}: Collaboration with GISFY"
+    subject = f"Exploring JV / Consortium Partnership – Tender #{tender.tender_id} ({state_name}): Collaboration with GISFY"
+    clean_proj = (tender.title or f"Tender #{tender.tender_id}").strip().strip("[]").strip().rstrip(".")
+    contact_name = payload.gisfy_contact_name or "Farhath Bakka | Business Development Executive"
+    contact_email = payload.gisfy_contact_email or "farhath@gisfy.co.in"
 
-    letter_text = f"""CONFIDENTIAL & PRIVILEGED — LETTER OF INTENT FOR CONSORTIUM / JOINT VENTURE
+    letter_text = f"""Dear Team,
 
-Date: {datetime.utcnow().strftime('%d %B %Y')}
+Greetings from GISFY Private Limited, India.
 
-To:
-{partner.contact_person or 'Head of Strategic Alliances'}
-{partner.designation or 'Director - Govt Tenders & Partnerships'}
-{partner.name}
-{partner.city or ''}, {partner.state or 'India'}
-Email: {partner.email or 'N/A'} | Phone: {partner.phone or 'N/A'}
+We are an ISO-certified technology company specialising in Geographic Information Systems (GIS), WebGIS, Artificial Intelligence and Machine Learning (AI/ML), data analytics, Management Information Systems (MIS), cloud solutions, and digital transformation.
 
-From:
-{payload.gisfy_contact_name}
-GISFY (Spatial Intelligence & Automated Proposals Directorate)
-Hyderabad, India
-Email: {payload.gisfy_contact_email} | Web: https://gisfy.co.in
+We are currently exploring a potential Joint Venture (JV) / Consortium partnership for {clean_proj}.
 
-Subject: Invitation for Joint Venture / Consortium Bidding for Tender Ref #{tender.tender_id}
-Tender Title: {tender.title}
-Authority / Department: {dept_name}
-State: {state_name}
-Submission Due Date: {due_date_str}
+Considering your organisation's expertise and experience, we believe there may be valuable opportunities for collaboration in the joint submission and implementation of this assignment, subject to the applicable procurement requirements.
 
-Dear {partner.contact_person or 'Partner Team'},
+If your organisation is interested in exploring this partnership opportunity, we kindly request you to share the following documents for our preliminary evaluation:
 
-GISFY is actively preparing our bid response for the above-referenced prestigious tender published by {dept_name}. Based on our automated proposal intelligence analysis and eligibility cross-matching, we identify {partner.name} as our preferred high-synergy collaboration partner.
+• Company Profile – Highlighting your organisation's technical capabilities, core competencies, and areas of expertise.
+• Company Registration Certificate – Valid documentation confirming the legal registration of your organisation.
+• Tax Registration Certificate – Applicable tax registration documents issued by the relevant authorities.
+• CVs of Key Experts – Profiles of qualified professionals with expertise relevant to the proposed assignment.
+• Relevant Project Experience – Details of similar completed or ongoing projects, including project descriptions, scope of work, client details, and your organisation's role.
 
-1. COLLABORATION RATIONALE & WHY NEEDED:
-{match_info['why_needed']}
+Upon receiving and reviewing the above documents, we would be pleased to discuss the proposed collaboration structure and share a draft Joint Venture / Consortium Agreement for your review and mutual consideration.
 
-2. PROPOSED CONSORTIUM / JV ARCHITECTURE:
-- Proposed Structure: {payload.proposed_jv_split}
-- GISFY Core Scope: Turnkey Bid Management, WebGIS Portal Architecture, Spatial Database Integration, PostGIS Engine, Cloud Solution Design, and Quality Assurance.
-- {partner.name} Scope: {match_info['synergy_scope']}
+We look forward to your positive response and the opportunity to establish a mutually beneficial partnership.
 
-3. STRATEGIC SYNERGY:
-By uniting GISFY's proprietary geospatial proposal intelligence and {partner.name}'s market-leading domain credentials ({partner.primary_domain}, {partner.empanelment_status or 'Industry Certifications'}), our joint consortium fulfills 100% of the technical, turnover, and empanelment eligibility benchmarks.
-
-{f"4. ADDITIONAL NOTES FROM GISFY BID TEAM:\n{payload.custom_message}\n" if payload.custom_message else ""}
-5. IMMEDIATE ACTION & NEXT STEPS:
-We invite you to sign a mutual Non-Disclosure Agreement (NDA) and schedule a joint technical alignment call within the next 48 hours to finalize scope demarcation, joint costing, and submission formalities before the deadline ({due_date_str}).
-
-Please confirm your availability and interest by replying directly to this communication.
-
-Warm regards,
-
-{payload.gisfy_contact_name}
-GISFY Tendering & Strategic Alliances Division
-Email: {payload.gisfy_contact_email}
+Thanks & Regards,
+Farhath Bakka | Business Development Executive
+GISFY Private Limited, Ground Floor, DSL Abacus IT Park,
+Uppal, Hyderabad, Telangana – 500039, India
+Mobile: +91 90631 20678
+Website: www.gisfy.co.in
 """
 
     # Update collaboration status in DB to 'Outreach Sent'
@@ -1708,65 +1794,44 @@ def send_collaboration_outreach_email(
     dept_name = tender.department or f"State Government of {state_name}"
     due_date_str = tender.last_date.strftime("%d %b %Y, %I:%M %p") if tender.last_date else "As per official portal notice"
 
-    subject = f"[Consortium / JV Opportunity] Tender #{tender.tender_id} - {state_name}: Collaboration with GISFY"
+    subject = f"Exploring JV / Consortium Partnership – Tender #{tender.tender_id} ({state_name}): Collaboration with GISFY"
+    clean_proj = (tender.title or f"Tender #{tender.tender_id}").strip().strip("[]").strip().rstrip(".")
 
-    letter_text = f"""================================================================================
-🛡️ TEST & CONTENT VERIFICATION COPY — ORIGINAL CLIENT EMAIL SHIELDED
-Reviewer Deliveries: swethanjali@gisfy.co.in, swethagisfy@gmail.com
-Intended Collaboration Partner: {partner.name}
-Partner Email (Shielded in Test Mode): {partner.email or 'N/A'}
-Status: Pre-approval test mode (No external emails sent to partner)
-================================================================================
+    contact_name = payload.gisfy_contact_name or "Farhath Bakka & GISFY Support"
+    contact_email = payload.gisfy_contact_email or "farhath@gisfy.co.in, support@gisfy.co.in"
+    from_address = "Farhath Bakka <farhath@gisfy.co.in>, GISFY Support <support@gisfy.co.in>"
+    cc_recipients = ["bidding@gisfy.co.in"]
 
-CONFIDENTIAL & PRIVILEGED — LETTER OF INTENT FOR CONSORTIUM / JOINT VENTURE
+    letter_text = f"""Dear Team,
 
-Date: {datetime.utcnow().strftime('%d %B %Y')}
+Greetings from GISFY Private Limited, India.
 
-To:
-{partner.contact_person or 'Head of Strategic Alliances'}
-{partner.designation or 'Director - Govt Tenders & Partnerships'}
-{partner.name}
-{partner.city or ''}, {partner.state or 'India'}
-Email: {partner.email or 'N/A'} [SHIELDED IN TEST MODE] | Phone: {partner.phone or 'N/A'}
+We are an ISO-certified technology company specialising in Geographic Information Systems (GIS), WebGIS, Artificial Intelligence and Machine Learning (AI/ML), data analytics, Management Information Systems (MIS), cloud solutions, and digital transformation.
 
-From:
-Swethanjali / Swetha (GISFY Proposals Directorate)
-GISFY (Spatial Intelligence & Automated Proposals Directorate)
-Hyderabad, India
-Email: swethanjali@gisfy.co.in | Web: https://gisfy.co.in
+We are currently exploring a potential Joint Venture (JV) / Consortium partnership for {clean_proj}.
 
-Subject: Invitation for Joint Venture / Consortium Bidding for Tender Ref #{tender.tender_id}
-Tender Title: {tender.title}
-Authority / Department: {dept_name}
-State: {state_name}
-Submission Due Date: {due_date_str}
+Considering your organisation's expertise and experience, we believe there may be valuable opportunities for collaboration in the joint submission and implementation of this assignment, subject to the applicable procurement requirements.
 
-Dear {partner.contact_person or 'Partner Team'},
+If your organisation is interested in exploring this partnership opportunity, we kindly request you to share the following documents for our preliminary evaluation:
 
-GISFY is actively preparing our bid response for the above-referenced prestigious tender published by {dept_name}. Based on our automated proposal intelligence analysis and eligibility cross-matching, we identify {partner.name} as our preferred high-synergy collaboration partner.
+• Company Profile – Highlighting your organisation's technical capabilities, core competencies, and areas of expertise.
+• Company Registration Certificate – Valid documentation confirming the legal registration of your organisation.
+• Tax Registration Certificate – Applicable tax registration documents issued by the relevant authorities.
+• CVs of Key Experts – Profiles of qualified professionals with expertise relevant to the proposed assignment.
+• Relevant Project Experience – Details of similar completed or ongoing projects, including project descriptions, scope of work, client details, and your organisation's role.
 
-1. COLLABORATION RATIONALE & WHY NEEDED:
-{match_info['why_needed']}
+Upon receiving and reviewing the above documents, we would be pleased to discuss the proposed collaboration structure and share a draft Joint Venture / Consortium Agreement for your review and mutual consideration.
 
-2. PROPOSED CONSORTIUM / JV ARCHITECTURE:
-- Proposed Structure: {payload.proposed_jv_split}
-- GISFY Core Scope: Turnkey Bid Management, WebGIS Portal Architecture, Spatial Database Integration, PostGIS Engine, Cloud Solution Design, and Quality Assurance.
-- {partner.name} Scope: {match_info['synergy_scope']}
+We look forward to your positive response and the opportunity to establish a mutually beneficial partnership.
 
-3. STRATEGIC SYNERGY:
-By uniting GISFY's proprietary geospatial proposal intelligence and {partner.name}'s market-leading domain credentials ({partner.primary_domain}, {partner.empanelment_status or 'Industry Certifications'}), our joint consortium fulfills 100% of the technical, turnover, and empanelment eligibility benchmarks.
-
-{f"4. ADDITIONAL NOTES FROM GISFY BID TEAM:\n{payload.custom_message}\n" if payload.custom_message else ""}
-5. IMMEDIATE ACTION & NEXT STEPS:
-We invite you to sign a mutual Non-Disclosure Agreement (NDA) and schedule a joint technical alignment call within the next 48 hours to finalize scope demarcation, joint costing, and submission formalities before the deadline ({due_date_str}).
-
-Please confirm your availability and interest by replying directly to this communication.
-
-Warm regards,
-
-Swethanjali / Swetha
-GISFY Tendering & Strategic Alliances Division
-Email: swethanjali@gisfy.co.in / swethagisfy@gmail.com
+Thanks & Regards,
+Farhath Bakka | Business Development Executive
+GISFY Support & Partnerships Team
+GISFY Private Limited, Ground Floor, DSL Abacus IT Park,
+Uppal, Hyderabad, Telangana – 500039, India
+Email: farhath@gisfy.co.in | support@gisfy.co.in
+Mobile: +91 90631 20678
+Website: www.gisfy.co.in
 """
 
     html_content = build_collaboration_email_html(
@@ -1776,58 +1841,101 @@ Email: swethanjali@gisfy.co.in / swethagisfy@gmail.com
         letter_text=letter_text,
         jv_split=payload.proposed_jv_split or "60% GISFY : 40% Specialized Partner",
         custom_notes=payload.custom_message,
-        gisfy_name="Swethanjali / Swetha (GISFY)",
-        gisfy_email="swethanjali@gisfy.co.in"
+        gisfy_name=contact_name,
+        gisfy_email=contact_email,
+        cc_email="bidding@gisfy.co.in"
     )
 
-    # STRICT SAFEGUARD: Send only to swethanjali@gisfy.co.in and swethagisfy@gmail.com for initial verification
-    # External partner email is shielded and NEVER sent until user approval
-    SAFE_RECIPIENTS = ["swethanjali@gisfy.co.in", "swethagisfy@gmail.com"]
-    recipients = list(SAFE_RECIPIENTS)
-
-    # If payload provided other gisfy internal emails, keep them; strip all external client/partner emails
+    # Collect all intended recipients: original partner email + any user-specified recipients
+    recipients = []
     for r in payload.recipients or []:
         r_clean = r.strip()
-        if r_clean and ("@gisfy.co.in" in r_clean.lower() or "swethagisfy" in r_clean.lower()):
-            if r_clean.lower() not in [x.lower() for x in recipients]:
-                recipients.append(r_clean)
+        if r_clean and "@" in r_clean and r_clean.lower() not in [x.lower() for x in recipients]:
+            recipients.append(r_clean)
 
-    dispatch_res = _dispatch_html_email(
-        recipients=recipients,
+    # Ensure partner's original email ID is included if valid
+    if partner.email and partner.email.strip() and "@" in partner.email:
+        p_email = partner.email.strip()
+        if p_email.lower() not in [x.lower() for x in recipients]:
+            recipients.insert(0, p_email)
+
+    # Fallback to team members only if no recipients were provided
+    if not recipients:
+        recipients = ["farhath@gisfy.co.in"]
+
+    target_partner_email = (partner.email or (recipients[0] if recipients else "farhath@gisfy.co.in")).strip()
+
+    # Step 5 Rolling 24-hour Quota Check (Max 50)
+    from app.services.collaboration_scheduler import collaboration_scheduler
+    sent_24h = collaboration_scheduler.get_rolling_24h_sent_count(db)
+    active_limit = collaboration_scheduler.pilot_limit if collaboration_scheduler.pilot_mode else collaboration_scheduler.max_daily_limit
+    if sent_24h >= active_limit:
+        return {
+            "status": "failed",
+            "error": f"Daily outreach quota reached ({sent_24h}/{active_limit} emails in rolling 24 hours). Limit is {active_limit} emails/day.",
+            "message": f"Daily limit reached ({sent_24h}/{active_limit}). Cannot dispatch additional emails until quota resets."
+        }
+
+    from app.services.live_email_provider import live_email_provider
+
+    lock_key = f"tender_{tender.id}_partner_{partner.id}"
+    dispatch_res = live_email_provider.dispatch_email(
+        to_email=target_partner_email,
         subject=subject,
-        html_content=html_content,
-        state_name=state_name,
-        tender_id=str(tender.tender_id),
-        event_prefix="COLLABORATION TEST EMAIL [SHIELDED]"
+        body_html=html_content,
+        body_text=letter_text,
+        partner_name=partner.name,
+        cc_email="bidding@gisfy.co.in",
+        from_name="Farhath Bakka & GISFY Support",
+        from_email="farhath@gisfy.co.in, support@gisfy.co.in",
+        reply_to="farhath@gisfy.co.in, support@gisfy.co.in",
+        lock_key=lock_key
     )
 
+    if not dispatch_res.get("success"):
+        update_tender_collaboration(
+            db,
+            tender.id,
+            partner.id,
+            status="Failed",
+            notes=f"Delivery failed: {dispatch_res.get('error')}"
+        )
+        return {
+            "status": "failed",
+            "error": dispatch_res.get("error"),
+            "provider": dispatch_res.get("provider"),
+            "provider_status_code": dispatch_res.get("provider_status_code"),
+            "message": dispatch_res.get("error") or "Email provider rejected or is unauthenticated."
+        }
+
+    status_label = dispatch_res.get("status", "Provider Accepted")
     update_tender_collaboration(
         db,
         tender.id,
         partner.id,
-        status="Outreach Sent",
-        notes=f"Test LOI dispatched to {', '.join(recipients)} (Client {partner.name} shielded) on {datetime.utcnow().strftime('%d %b %Y %H:%M')}"
+        status=status_label,
+        notes=f"Accepted by {dispatch_res.get('provider')} (Code: {dispatch_res.get('provider_status_code')}) from {from_address} to {target_partner_email} (CC: bidding@gisfy.co.in). Sent folder verified: {dispatch_res.get('sent_folder_verified')}"
     )
 
     return {
         "status": "success",
-        "delivery_mode": dispatch_res.get("delivery_mode"),
-        "recipients": recipients,
-        "shielded_partner_name": partner.name,
-        "shielded_partner_email": partner.email,
-        "test_mode": True,
+        "collaboration_status": status_label,
+        "delivery_mode": dispatch_res.get("provider"),
+        "provider_accepted": True,
+        "provider_status_code": dispatch_res.get("provider_status_code"),
+        "sent_folder_verified": dispatch_res.get("sent_folder_verified", False),
+        "from_address": from_address,
+        "recipients": [target_partner_email],
+        "cc_recipients": ["bidding@gisfy.co.in"],
+        "partner_name": partner.name,
+        "partner_email": partner.email,
         "subject": subject,
         "tender_id": str(tender.tender_id),
         "tender_title": tender.title,
-        "partner_name": partner.name,
-        "partner_email": partner.email,
         "state_name": state_name,
-        "view_url": dispatch_res.get("view_url"),
-        "preview_file": dispatch_res.get("preview_file"),
-        "sent_at": dispatch_res.get("sent_at"),
+        "sent_at": dispatch_res.get("accepted_at"),
         "proposal_letter": letter_text,
-        "collaboration_status": "Outreach Sent",
-        "message": "Dispatched securely to swethanjali@gisfy.co.in and swethagisfy@gmail.com. Original client email is safely shielded."
+        "message": f"Provider accepted ({dispatch_res.get('provider_message', 'Message queued for delivery')}). Sent folder verified: {dispatch_res.get('sent_folder_verified')}."
     }
 
 
@@ -1856,3 +1964,41 @@ def get_collaboration_stats(db: Session) -> Dict[str, Any]:
             for p in db.query(models.Partner).order_by(models.Partner.rating.desc()).limit(6)
         ]
     }
+
+
+def auto_dispatch_collaboration_email_for_tender(db: Session, tender_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Automatically identify top high-synergy collaboration partner for a tender and
+    dispatch the executive Letter of Intent / Consortium Opportunity email to team members.
+    """
+    from app.services.email_service import get_team_members, log_email_event
+
+    try:
+        res = search_partners_for_tender(db=db, tender_id=tender_id, min_score=80.0)
+        partners = res.get("matched_partners", [])
+        if not partners:
+            return None
+
+        top_partner = partners[0]
+        partner_email = top_partner.get("email")
+        recipients = [partner_email] if partner_email else []
+
+        payload = schemas.CollaborationEmailDispatchRequest(
+            tender_id=tender_id,
+            partner_id=top_partner["id"],
+            proposed_jv_split="60% Lead Bidder (GISFY) : 40% Specialized Partner",
+            recipients=recipients,
+            gisfy_contact_name="Farhath Bakka | Business Development Executive",
+            gisfy_contact_email="farhath@gisfy.co.in",
+            custom_message=f"Automated JV matching: {top_partner['name']} selected with {top_partner.get('match_score', 95)}% compatibility score."
+        )
+        dispatch_result = send_collaboration_outreach_email(db, payload)
+        log_email_event(
+            f"[AUTO COLLABORATION] 🤝 Automatically matched #{tender_id} with partner '{top_partner['name']}' ({top_partner.get('match_score')}% match) & dispatched LOI email.",
+            "success"
+        )
+        return dispatch_result
+    except Exception as e:
+        log_email_event(f"[AUTO COLLABORATION ERROR] Failed to auto-dispatch collaboration email for tender #{tender_id}: {e}", "error")
+        return None
+

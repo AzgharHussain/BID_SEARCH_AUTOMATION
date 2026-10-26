@@ -3,6 +3,7 @@ import json
 import smtplib
 import mimetypes
 import urllib.parse
+import base64
 from datetime import datetime
 from pathlib import Path
 from email.mime.multipart import MIMEMultipart
@@ -19,8 +20,28 @@ TEAM_MEMBERS_FILE = BASE_DIR / "team_members.json"
 SENT_EMAILS_DIR = BASE_DIR / "storage" / "sent_emails"
 LOG_FILE = BASE_DIR / "scraper.log"
 
+
+def get_gisfy_logo_base64() -> str:
+    """Retrieve GISFY corporate logo as base64 data URI for embedding in HTML emails."""
+    candidates = [
+        BASE_DIR / "storage" / "gisfy_logo.png",
+        BASE_DIR.parent / "frontend" / "public" / "gisfy_logo.png",
+        BASE_DIR.parent / "frontend" / "src" / "assets" / "gisfy_logo.png",
+    ]
+    for p in candidates:
+        if p.exists():
+            try:
+                with open(p, "rb") as lf:
+                    b64 = base64.b64encode(lf.read()).decode("utf-8")
+                    return f"data:image/png;base64,{b64}"
+            except Exception:
+                pass
+    return "https://gisfy.co.in/images/logo.png"
+
 DEFAULT_TEAM_MEMBERS = [
+    {"email": "farhath@gisfy.co.in", "name": "Farhath Bakka (GISFY)", "role": "Business Development Executive & Lead", "added_at": "2026-10-23T15:00:00"},
     {"email": "swethanjali@gisfy.co.in", "name": "Swethanjali (GISFY)", "role": "Executive Lead & Verifier", "added_at": "2026-10-20T21:55:00"},
+    {"email": "bidding@gisfy.co.in", "name": "GISFY Bidding Operations", "role": "Mandatory CC & Proposals Ops", "added_at": "2026-10-23T15:00:00"},
     {"email": "swethagisfy@gmail.com", "name": "Swetha (GISFY)", "role": "Executive Reviewer & Lead", "added_at": "2026-10-16T15:47:00"},
     {"email": "proposals-team@gisfy.co.in", "name": "GISFY Proposals Team", "role": "Bidding Team", "added_at": "2026-10-15T12:00:00"},
     {"email": "tenders@gisfy.co.in", "name": "GISFY Tender Ops", "role": "Procurement Lead", "added_at": "2026-10-15T12:00:00"},
@@ -557,17 +578,28 @@ def build_new_proposal_alert_email_html(
     """
 
 
-def send_automatic_new_proposal_alert(tender_data: Dict[str, Any], recipient: str = "swethagisfy@gmail.com") -> Dict[str, Any]:
-    """Deliver real-time proposal alert to user."""
+def send_automatic_new_proposal_alert(tender_data: Dict[str, Any], recipient: Optional[str] = None) -> Dict[str, Any]:
+    """Deliver real-time proposal alert to registered team members."""
+    team_members = get_team_members()
+    recipients = []
+    if recipient:
+        recipients.append(recipient.strip())
+    for m in team_members:
+        em = m.get("email", "").strip()
+        if em and em.lower() not in [r.lower() for r in recipients]:
+            recipients.append(em)
+    if not recipients:
+        recipients = ["swethagisfy@gmail.com"]
+
     sname = tender_data.get("state_name", "State Portal")
     kw = tender_data.get("keyword", "GIS")
     title = tender_data.get("title", "New Proposal")
     subject = f"🔔 [NEW PROPOSAL DETECTED] {title[:60]}... ({sname} • {kw})"
-    html_content = build_new_proposal_alert_email_html(tender_data, recipient_email=recipient)
+    html_content = build_new_proposal_alert_email_html(tender_data, recipient_email=", ".join(recipients))
 
     # Deliver using standard delivery pipeline
     return _dispatch_html_email(
-        recipients=[recipient],
+        recipients=recipients,
         subject=subject,
         html_content=html_content,
         state_name=sname,
@@ -588,7 +620,11 @@ def send_state_keyword_digest(
     finally:
         db.close()
 
-    target_recipients = recipients or ["swethagisfy@gmail.com"]
+    team_members = get_team_members()
+    target_recipients = recipients or [m["email"] for m in team_members if m.get("email")]
+    if not target_recipients:
+        target_recipients = ["swethagisfy@gmail.com"]
+
     subject = "[GISFY Proposal Intelligence] Executive State & Keyword Procurement Report with Downloadable Documents"
     html_content = build_state_keyword_digest_email_html(
         report_data=report_data,
@@ -611,14 +647,24 @@ def _dispatch_html_email(
     html_content: str,
     state_name: Optional[str] = None,
     tender_id: Optional[str] = None,
-    event_prefix: str = "EMAIL DISPATCH"
+    event_prefix: str = "EMAIL DISPATCH",
+    from_address: Optional[str] = None,
+    cc_recipients: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """Internal delivery helper: saves HTML locally and delivers via SMTP if credentials are present."""
+    reload_smtp_env()
+    smtp_host = os.getenv("SMTP_HOST")
+    smtp_port = int(os.getenv("SMTP_PORT", 587))
+    smtp_user = os.getenv("SMTP_USER")
+    smtp_password = os.getenv("SMTP_PASSWORD")
+    from_addr = from_address or os.getenv("SMTP_FROM") or (f"Farhath Bakka <{smtp_user}>" if smtp_user else "Farhath Bakka <farhath@gisfy.co.in>")
+
     msg = MIMEMultipart("mixed")
     msg["Subject"] = subject
-    from_addr = os.getenv("SMTP_FROM", "GISFY Procurement System <notifications@gisfy.co.in>")
     msg["From"] = from_addr
     msg["To"] = ", ".join(recipients)
+    if cc_recipients:
+        msg["Cc"] = ", ".join(cc_recipients)
     msg["Date"] = datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S +0000")
 
     html_part = MIMEText(html_content, "html", "utf-8")
@@ -651,37 +697,51 @@ def _dispatch_html_email(
     with open(email_file_path, "w", encoding="utf-8") as f:
         f.write(html_content)
 
-    smtp_host = os.getenv("SMTP_HOST")
-    smtp_port = int(os.getenv("SMTP_PORT", 587))
-    smtp_user = os.getenv("SMTP_USER")
-    smtp_password = os.getenv("SMTP_PASSWORD")
     delivery_mode = "simulated"
+    smtp_error = None
+
+    # Merge all targets for actual SMTP delivery envelope
+    all_send_recipients = list(dict.fromkeys([r.strip() for r in (recipients + (cc_recipients or [])) if r and "@" in r]))
 
     if smtp_host and smtp_user and smtp_password:
         try:
-            with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
-                server.ehlo()
-                if os.getenv("SMTP_USE_TLS", "true").lower() == "true":
-                    server.starttls()
+            if smtp_port == 465:
+                with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=15) as server:
                     server.ehlo()
-                server.login(smtp_user, smtp_password)
-                server.sendmail(from_addr, recipients, msg.as_string())
+                    server.login(smtp_user, smtp_password)
+                    server.sendmail(from_addr, all_send_recipients, msg.as_string())
+            else:
+                with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
+                    server.ehlo()
+                    if os.getenv("SMTP_USE_TLS", "true").lower() == "true":
+                        server.starttls()
+                        server.ehlo()
+                    server.login(smtp_user, smtp_password)
+                    server.sendmail(from_addr, all_send_recipients, msg.as_string())
             delivery_mode = "smtp"
-            log_email_event(f"[{event_prefix}] ✉️ Delivered to {len(recipients)} recipients via SMTP: {', '.join(recipients)}", "success")
+            cc_str = f" (CC: {', '.join(cc_recipients)})" if cc_recipients else ""
+            log_email_event(f"[{event_prefix}] ✉️ Delivered to {len(recipients)} recipients via SMTP: {', '.join(recipients)}{cc_str}", "success")
         except Exception as e:
+            smtp_error = str(e)
             log_email_event(f"[SMTP WARNING] ⚠️ SMTP connection failed ({e}). Saved to {email_filename}.", "error")
             delivery_mode = "saved_locally"
     else:
         delivery_mode = "preview_delivered"
+        cc_str = f" (CC: {', '.join(cc_recipients)})" if cc_recipients else ""
         log_email_event(
-            f"[{event_prefix}] ✉️ Sent '{subject}' to {len(recipients)} recipients: {', '.join(recipients)}. Full HTML saved to sent_emails/{email_filename}.",
+            f"[{event_prefix}] ✉️ Sent '{subject}' to {len(recipients)} recipients: {', '.join(recipients)}{cc_str}. Full HTML saved to sent_emails/{email_filename}.",
             "success"
         )
 
+    is_error = bool(smtp_error)
     return {
-        "status": "success",
+        "status": "error" if is_error else "success",
         "delivery_mode": delivery_mode,
+        "message": f"SMTP delivery failed: {smtp_error}. Saved locally to {email_filename}" if smtp_error else ("Saved locally in archive (SMTP not configured)" if delivery_mode == "preview_delivered" else "Delivered via SMTP"),
+        "error": smtp_error,
+        "from_address": from_addr,
         "recipients": recipients,
+        "cc_recipients": cc_recipients or [],
         "subject": subject,
         "state_name": state_name or "Official Portals",
         "tender_id": tender_id,
@@ -806,13 +866,14 @@ def save_smtp_config(
     return get_smtp_status()
 
 
-def test_smtp_connection(target_email: str = "swethagisfy@gmail.com") -> Dict[str, Any]:
-    """Send an immediate test verification email to target_email."""
+def test_smtp_connection(target_email: str = "farhath@gisfy.co.in") -> Dict[str, Any]:
+    """Send an immediate test verification email to target_email with mandatory CC."""
     reload_smtp_env()
     smtp_host = os.getenv("SMTP_HOST")
     smtp_port = int(os.getenv("SMTP_PORT", 587))
     smtp_user = os.getenv("SMTP_USER")
     smtp_password = os.getenv("SMTP_PASSWORD")
+    cc_target = os.getenv("SMTP_CC", "bidding@gisfy.co.in")
 
     if not (smtp_host and smtp_user and smtp_password):
         return {
@@ -829,16 +890,17 @@ def test_smtp_connection(target_email: str = "swethagisfy@gmail.com") -> Dict[st
         <div style="background: #ffffff; padding: 14px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 13px;">
             <b>Sender:</b> {os.getenv('SMTP_FROM', smtp_user)}<br/>
             <b>Recipient:</b> {target_email}<br/>
+            <b>CC:</b> {cc_target}<br/>
             <b>Timestamp:</b> {datetime.utcnow().strftime('%d %B %Y, %H:%M:%S UTC')}
         </div>
         <p style="font-size: 12px; color: #64748b; margin-top: 16px;">All automated proposal alerts and joint venture collaboration letters will now arrive directly in your inbox.</p>
     </div>
     """
-
     res = _dispatch_html_email(
         recipients=[target_email],
         subject=test_subject,
         html_content=test_html,
+        cc_recipients=[cc_target] if cc_target else None,
         event_prefix="SMTP VERIFICATION TEST"
     )
     return res
@@ -851,14 +913,23 @@ def build_collaboration_email_html(
     letter_text: str,
     jv_split: str,
     custom_notes: Optional[str] = None,
-    gisfy_name: str = "Swetha (GISFY)",
-    gisfy_email: str = "swethagisfy@gmail.com"
+    gisfy_name: str = "Farhath Bakka | Business Development Executive",
+    gisfy_email: str = "farhath@gisfy.co.in",
+    cc_email: str = "bidding@gisfy.co.in"
 ) -> str:
     """Generate executive HTML email for Joint Venture / Consortium Collaboration LOI."""
     state_name = tender.state.name if tender.state else "India"
     dept_name = tender.department or f"State Government of {state_name}"
     due_date_str = tender.last_date.strftime("%d %b %Y, %I:%M %p") if tender.last_date else "As per official portal notice"
     tid = str(tender.tender_id or tender.id)
+    logo_src = get_gisfy_logo_base64()
+
+    # Split signature from letter_text if already present to prevent duplicate
+    body_before_sig = letter_text.strip()
+    if "Thanks & Regards," in body_before_sig:
+        body_before_sig = body_before_sig.split("Thanks & Regards,")[0].strip()
+    elif "Thanks &amp; Regards," in body_before_sig:
+        body_before_sig = body_before_sig.split("Thanks &amp; Regards,")[0].strip()
 
     # Collect tender document links
     docs_html = ""
@@ -900,22 +971,8 @@ def build_collaboration_email_html(
                                     Letter of Intent for Joint Venture Bidding
                                 </h1>
                                 <p style="margin: 0; font-size: 13px; opacity: 0.9; color: #e0e7ff;">
-                                    Target Partner: <b>{partner.name}</b> • Prepared by: <b>{gisfy_name} ({gisfy_email})</b>
+                                    Target Partner: <b>{partner.name}</b> &lt;{partner.email or 'N/A'}&gt; • From: <b>{gisfy_name} ({gisfy_email})</b> • CC: <b>{cc_email}</b>
                                 </p>
-                            </td>
-                        </tr>
-
-                        <!-- Test & Content Verification Shield Banner -->
-                        <tr>
-                            <td style="padding: 16px 36px 0 36px;">
-                                <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 12px 18px; color: #92400e; font-size: 12px; line-height: 1.5;">
-                                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                                        <span style="font-weight: 800; font-size: 13px; color: #78350f;">🛡️ TEST &amp; DESIGN VERIFICATION COPY — CLIENT SHIELDED</span>
-                                        <span style="background: #f59e0b; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-weight: 800; font-size: 10px; text-transform: uppercase;">Internal Review</span>
-                                    </div>
-                                    <div>This collaboration proposal was securely delivered to <b>swethanjali@gisfy.co.in</b> and <b>swethagisfy@gmail.com</b> for layout, content, and JV terms approval.</div>
-                                    <div style="margin-top: 4px; color: #b45309; font-weight: 600;">🔒 External partner (<b>{partner.name}</b> &lt;{partner.email or 'N/A'}&gt;) is protected and received NO external emails.</div>
-                                </div>
                             </td>
                         </tr>
 
@@ -925,7 +982,7 @@ def build_collaboration_email_html(
                                 <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 20px;">
                                     <tr>
                                         <td width="48%" style="vertical-align: top; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px;">
-                                            <div style="font-size: 11px; font-weight: 700; color: #6366f1; text-transform: uppercase; margin-bottom: 6px;">🏢 COLLABORATION PARTNER</div>
+                                             <div style="font-size: 11px; font-weight: 700; color: #6366f1; text-transform: uppercase; margin-bottom: 6px;">🏢 COLLABORATION PARTNER</div>
                                             <div style="font-size: 15px; font-weight: 800; color: #0f172a; margin-bottom: 4px;">{partner.name}</div>
                                             <div style="font-size: 12px; color: #475569; margin-bottom: 6px;">📍 {partner.city}, {partner.state}</div>
                                             <div style="font-size: 11px; color: #64748b;">🎯 <b>Domain:</b> {partner.primary_domain}</div>
@@ -957,7 +1014,21 @@ def build_collaboration_email_html(
                                     <div style="font-size: 12px; font-weight: 800; color: #475569; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">
                                         📜 OFFICIAL LETTER OF INTENT (LOI)
                                     </div>
-                                    <pre style="white-space: pre-wrap; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 12.5px; line-height: 1.6; color: #334155; margin: 0;">{letter_text}</pre>
+                                    <pre style="white-space: pre-wrap; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 13px; line-height: 1.6; color: #334155; margin: 0;">{body_before_sig}</pre>
+
+                                    <div style="margin-top: 22px; font-weight: 600; font-size: 13.5px; color: #1e293b;">Thanks &amp; Regards,</div>
+
+                                    <!-- Official Corporate Signature Block -->
+                                    <div style="margin-top: 6px; padding-top: 6px; font-size: 13.5px; color: #374151; line-height: 1.6;">
+                                        <div style="font-weight: 700; font-size: 15px; color: #0f172a;">Farhath Bakka <span style="font-weight: 400; color: #64748b;">| Business Development Executive</span></div>
+                                        <div style="color: #475569; margin-top: 2px;">GISFY Private Limited, Ground Floor, DSL Abacus IT Park,</div>
+                                        <div style="color: #475569;">Uppal, Hyderabad, Telangana – 500039, India</div>
+                                        <div style="color: #475569; margin-top: 4px;"><b>Mobile:</b> <a href="tel:+919063120678" style="color: #4f46e5; text-decoration: none;">+91 90631 20678</a></div>
+                                        <div style="color: #475569;"><b>Website:</b> <a href="http://www.gisfy.co.in" target="_blank" style="color: #4f46e5; text-decoration: none;">www.gisfy.co.in</a></div>
+                                        <div style="margin-top: 14px;">
+                                            <img src="{logo_src}" alt="GISFY Logo" style="height: 48px; max-width: 180px; object-fit: contain; display: block;" />
+                                        </div>
+                                    </div>
                                 </div>
 
                                 {f'''
@@ -975,7 +1046,7 @@ def build_collaboration_email_html(
                                     <a href="http://127.0.0.1:8000/api/reports/proposals-excel" style="display: inline-block; padding: 10px 22px; background: #059669; color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 13px; font-weight: 700; margin: 4px;">
                                         📊 Download Master Excel
                                     </a>
-                                    <a href="mailto:{gisfy_email}?subject=RE: [JV Agreement] Tender #{tid} - {partner.name}" style="display: inline-block; padding: 10px 22px; background: #0f172a; color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 13px; font-weight: 700; margin: 4px;">
+                                    <a href="mailto:{gisfy_email}?cc={cc_email}&subject=RE: [JV Agreement] Tender #{tid} - {partner.name}" style="display: inline-block; padding: 10px 22px; background: #0f172a; color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 13px; font-weight: 700; margin: 4px;">
                                         ✍️ Reply / Confirm Joint Agreement
                                     </a>
                                 </div>

@@ -76,9 +76,11 @@ else
         fi
     fi
     echo "⏳ Starting Vite Frontend Server on port 5173..."
-    nohup ./node_modules/.bin/vite --host 0.0.0.0 --port 5173 < /dev/null > "$FRONTEND_DIR/vite.log" 2>&1 &
-    FRONTEND_PID=$!
-    disown "$FRONTEND_PID" 2>/dev/null || true
+    NODE_BIN="node"
+    if [ -n "$found_dir" ] && [ -x "$found_dir/bin/node" ]; then
+        NODE_BIN="$found_dir/bin/node"
+    fi
+    python3 -c "import subprocess; subprocess.Popen(['$NODE_BIN', 'node_modules/.bin/vite', '--host', '0.0.0.0', '--port', '5173'], cwd='$FRONTEND_DIR', stdout=open('$FRONTEND_DIR/vite.log', 'w'), stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)"
     
     # Wait up to 15 seconds for frontend to be ready
     for i in {1..15}; do

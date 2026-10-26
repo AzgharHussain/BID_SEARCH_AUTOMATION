@@ -43,3 +43,8 @@ backend/storage/sent_emails/
 ehthumbs.db
 Thumbs.db
 .tempmediaStorage/
+.email_credentials/
+backend/.email_credentials/
+*.env
+*.bak*
+scratch_*.py

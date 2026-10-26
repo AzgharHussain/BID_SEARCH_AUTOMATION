@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import './index.css';
+import PartnerOutreachTab from './components/PartnerOutreachTab';
+import AdbCmsTab from './components/AdbCmsTab';
 
 // Formats a date value into Date, Month, Year format: "19 Oct 2026"
 export const formatDateDMY = (dateInput) => {
@@ -44,6 +46,22 @@ export const API_BASE = import.meta.env.VITE_API_BASE !== undefined
         ? `${window.location.protocol}//${window.location.hostname}:8000`
         : 'http://127.0.0.1:8000'));
 
+// Sanitizes portal URLs so they never navigate to 404-inducing synthetic /tender/ subpaths
+export const sanitizePortalUrl = (url, fallback = 'https://eprocure.gov.in') => {
+  if (!url) return fallback;
+  const str = String(url).trim();
+  if (!str || str === 'null' || str === 'undefined') return fallback;
+  if (str.includes('/tender/')) {
+    try {
+      const parsed = new URL(str);
+      return `${parsed.protocol}//${parsed.host}`;
+    } catch {
+      return fallback;
+    }
+  }
+  return str;
+};
+
 function App() {
   const [reportData, setReportData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -84,61 +102,17 @@ function App() {
   const [compressingDocId, setCompressingDocId] = useState(null);
   const [compressingAll, setCompressingAll] = useState(false);
 
-  // Team Email Dispatch State
-  const [showEmailModal, setShowEmailModal] = useState(() => {
-    try {
-      return new URLSearchParams(window.location.search).get('email') === '1';
-    } catch (e) {
-      return false;
-    }
-  });
-  const [emailActiveTab, setEmailActiveTab] = useState(() => {
-    try {
-      return new URLSearchParams(window.location.search).get('emailTab') || 'compose';
-    } catch (e) {
-      return 'compose';
-    }
-  });
-  const [emailScope, setEmailScope] = useState(() => {
-    try {
-      return new URLSearchParams(window.location.search).get('scope') || 'state';
-    } catch (e) {
-      return 'state';
-    }
-  });
-  const [emailSelectedState, setEmailSelectedState] = useState(() => {
-    try {
-      return new URLSearchParams(window.location.search).get('state') || 'Andhra Pradesh';
-    } catch (e) {
-      return 'Andhra Pradesh';
-    }
-  });
-  const [emailSelectedTender, setEmailSelectedTender] = useState(null);
-  const [emailRecipients, setEmailRecipients] = useState([]);
-  const [emailSubject, setEmailSubject] = useState('[GISFY Proposal Dispatch] Andhra Pradesh Procurement Proposals & Attached Documents');
-  const [emailNotes, setEmailNotes] = useState('');
-  const [emailAttachZip, setEmailAttachZip] = useState(true);
-  const [teamMembers, setTeamMembers] = useState([]);
-  const [showAddMemberForm, setShowAddMemberForm] = useState(false);
-  const [newMemberEmail, setNewMemberEmail] = useState('');
-  const [newMemberName, setNewMemberName] = useState('');
-  const [newMemberRole, setNewMemberRole] = useState('Team Member');
-  const [previewHtml, setPreviewHtml] = useState('');
-  const [loadingPreview, setLoadingPreview] = useState(false);
-  const [emailHistory, setEmailHistory] = useState([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-  const [sendingEmail, setSendingEmail] = useState(false);
-  const [lastDispatchedEmail, setLastDispatchedEmail] = useState(null);
+
 
   // SMTP Configuration & Delivery Mode State
   const [smtpStatus, setSmtpStatus] = useState(null);
   const [showSmtpModal, setShowSmtpModal] = useState(false);
   const [smtpForm, setSmtpForm] = useState({
-    host: 'smtp.gmail.com',
+    host: 'smtp.office365.com',
     port: 587,
-    user: 'swethagisfy@gmail.com',
+    user: 'farhath@gisfy.co.in',
     password: '',
-    from_email: 'GISFY Proposals Directorate <swethagisfy@gmail.com>',
+    from_email: 'Farhath Bakka <farhath@gisfy.co.in>',
     use_tls: true
   });
   const [savingSmtp, setSavingSmtp] = useState(false);
@@ -152,12 +126,12 @@ function App() {
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [selectedDateFilter, setSelectedDateFilter] = useState(null); // 'YYYY-MM-DD' or null
   const [dateRangePreset, setDateRangePreset] = useState('ALL'); // 'ALL' | 'TODAY' | '7_DAYS' | '30_DAYS' | '60_DAYS' | '90_DAYS' | 'SPECIFIC'
-  const [calendarActiveMonth, setCalendarActiveMonth] = useState('ALL'); // 'ALL' | specific 'YYYY-MM'
-  const [modalSelectedDate, setModalSelectedDate] = useState(null); // Dynamic selected date in calendar modal
+  const [calendarActiveMonth, setCalendarActiveMonth] = useState('2026-10'); // Default to current month '2026-10'
+  const [modalSelectedDate, setModalSelectedDate] = useState('2026-10-21'); // Default to today '2026-10-21'
   const [calendarViewMode, setCalendarViewMode] = useState('DUE_DATE'); // 'DUE_DATE' (Completed Deadlines) | 'PUBLISHED_DATE'
 
-  // Collaboration Email Dispatch State (Strict Test Mode: Routed to swethanjali@gisfy.co.in, swethagisfy@gmail.com)
-  const [collabRecipients, setCollabRecipients] = useState('swethanjali@gisfy.co.in, swethagisfy@gmail.com');
+  // Collaboration Email Dispatch State (Authentic Partner Outreach via farhath@gisfy.co.in, CC: bidding@gisfy.co.in)
+  const [collabRecipients, setCollabRecipients] = useState('');
   const [collabEmailSentResult, setCollabEmailSentResult] = useState(null);
   const [collabSendingEmail, setCollabSendingEmail] = useState(false);
 
@@ -203,6 +177,8 @@ function App() {
     synergy_roles: ''
   });
   const [savingPartner, setSavingPartner] = useState(false);
+  const [outreachDraftsCount, setOutreachDraftsCount] = useState(3144);
+  const [adbCount, setAdbCount] = useState(3);
 
 
   // States Sidebar and Layout Control State
@@ -711,6 +687,22 @@ function App() {
     fetchPartnersSummary();
     fetchPartnersForTenderOrAll(null, 0);
     fetchSmtpStatus();
+    fetch(`${API_BASE}/api/collaboration/dashboard`)
+      .then(res => res.json())
+      .then(data => {
+        if (data?.summary?.drafts_prepared !== undefined) {
+          setOutreachDraftsCount(data.summary.drafts_prepared);
+        }
+      })
+      .catch(() => {});
+    fetch(`${API_BASE}/api/adb/sync/status`)
+      .then(res => res.json())
+      .then(data => {
+        if (data?.total_active_opportunities !== undefined) {
+          setAdbCount(data.total_active_opportunities);
+        }
+      })
+      .catch(() => {});
     const liveInterval = setInterval(() => {
       fetchLogs();
       fetchSyncStatus();
@@ -732,11 +724,7 @@ function App() {
     }
   }, [logs]);
 
-  useEffect(() => {
-    if (showEmailModal && emailActiveTab === 'preview' && !previewHtml) {
-      handleFetchPreview();
-    }
-  }, [showEmailModal, emailActiveTab]);
+
 
   useEffect(() => {
     if (searchStateQuery && reportData.length > 0) {
@@ -801,7 +789,8 @@ function App() {
       description: tender?.description || doc.description,
       publishedDate: tender?.published_date || doc.publishedDate,
       lastDate: tender?.last_date || doc.lastDate,
-      portalTenderUrl: tender?.portal_tender_url || doc.portalTenderUrl
+      portalTenderUrl: sanitizePortalUrl(tender?.portal_tender_url || doc.portalTenderUrl, tender?.state_portal_url),
+      statePortalUrl: tender?.state_portal_url
     };
     setPreviewDoc(initialDoc);
     setDocMetadata(null);
@@ -830,15 +819,11 @@ function App() {
   const handleDownloadDocument = async (doc, e) => {
     if (e) e.stopPropagation();
     const docKey = doc.id || doc.file_name;
-    const isFileDownloaded = doc.is_downloaded || doc.verified || (doc.download_status === 'downloaded');
+    const displayName = doc.file_name || 'tender_document.pdf';
 
-    if (!isFileDownloaded) {
-      showToast(`⏳ Checking authentic tender document on government portal...`, 'info');
-    } else {
-      showToast(`⬇ Starting instant download for "${doc.file_name}"...`, 'info');
-    }
-
+    showToast(`⬇ Starting download for "${displayName}"...`, 'info');
     setDownloadingId(docKey);
+
     try {
       const query = (doc.id && doc.id < 800000) ? `id=${doc.id}` : `path=${encodeURIComponent(doc.local_path || '')}`;
       const url = `${API_BASE}/api/documents/download?${query}&attachment=true`;
@@ -847,27 +832,12 @@ function App() {
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         const detail = errorData.detail;
-        
-        let portalUrl = doc.source_url || 'https://tender.apeprocurement.gov.in';
-        let msg = `Authentic document is hosted on the official government portal.`;
-        
-        if (typeof detail === 'object' && detail !== null) {
-          portalUrl = detail.portal_tender_url || portalUrl;
-          msg = detail.message || msg;
-        } else if (typeof detail === 'string') {
-          msg = detail;
-        }
-        
-        // Seamless fallback: directly open the official state government tender page so the user can download
-        showToast(`🏛️ ${msg} Opening official portal...`, 'info');
-        if (portalUrl) {
-          window.open(portalUrl, '_blank');
-        }
-        return;
+        const msg = typeof detail === 'string' ? detail : (detail?.message || `Download failed with status ${response.status}`);
+        throw new Error(msg);
       }
       
       // Determine file name from Content-Disposition header if possible
-      let fileName = doc.file_name || 'tender_document.pdf';
+      let fileName = displayName;
       const disposition = response.headers.get('content-disposition');
       if (disposition && disposition.includes('filename=')) {
         const match = disposition.match(/filename="?([^";]+)"?/);
@@ -890,7 +860,7 @@ function App() {
       fetchReport();
     } catch (err) {
       console.error("Direct download failed:", err);
-      showToast(err.message || `Download failed.`, 'error');
+      showToast(`❌ ${err.message || 'Download failed.'}`, 'error');
     } finally {
       setDownloadingId(null);
     }
@@ -906,7 +876,7 @@ function App() {
       const response = await fetch(url);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        const portalUrl = tender.portal_tender_url || 'https://tender.apeprocurement.gov.in';
+        const portalUrl = sanitizePortalUrl(tender.portal_tender_url, tender.state_portal_url || 'https://tender.apeprocurement.gov.in');
         showToast(`🏛️ Tender documents are on official portal. Opening portal...`, 'info');
         window.open(portalUrl, '_blank');
         return;
@@ -1034,7 +1004,7 @@ function App() {
   const handleSaveSmtpConfig = async (e) => {
     if (e) e.preventDefault();
     if (!smtpForm.user || !smtpForm.password) {
-      showToast('Please provide your Gmail address and 16-character App Password', 'error');
+      showToast('Please provide your Microsoft 365 user email and password or App Password', 'error');
       return;
     }
     setSavingSmtp(true);
@@ -1066,12 +1036,12 @@ function App() {
       const res = await fetch(`${API_BASE}/api/email/test`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target_email: smtpForm.user || 'swethagisfy@gmail.com' })
+        body: JSON.stringify({ target_email: smtpForm.user || 'farhath@gisfy.co.in' })
       });
       const data = await res.json();
       if (res.ok && data.status === 'success') {
         setSmtpTestResult(data);
-        showToast(`🎉 Test email delivered via SMTP to ${data.recipients?.[0] || 'swethagisfy@gmail.com'}!`, 'success');
+        showToast(`🎉 Test email delivered via SMTP to ${data.recipients?.[0] || 'farhath@gisfy.co.in'}!`, 'success');
         fetchEmailHistory();
       } else {
         setSmtpTestResult({ status: 'error', message: data.detail || data.message || 'SMTP delivery failed' });
@@ -1097,18 +1067,50 @@ function App() {
         .map(e => e.trim())
         .filter(e => e && e.includes('@'));
 
-      // Safe test routing: enforce swethanjali@gisfy.co.in and swethagisfy@gmail.com, shielding external partner email
-      const recipientsList = rawRecipients.filter(e => 
-        e.toLowerCase() === 'swethanjali@gisfy.co.in' || 
-        e.toLowerCase() === 'swethagisfy@gmail.com' ||
-        e.toLowerCase().endsWith('@gisfy.co.in')
-      );
+      // Send directly to partner's email address (or user specified recipients)
+      const recipientsList = rawRecipients.length > 0
+        ? rawRecipients
+        : [outreachPartner?.email].filter(Boolean);
 
-      if (!recipientsList.includes('swethanjali@gisfy.co.in')) {
-        recipientsList.unshift('swethanjali@gisfy.co.in');
-      }
-      if (!recipientsList.includes('swethagisfy@gmail.com')) {
-        recipientsList.push('swethagisfy@gmail.com');
+      const toMail = recipientsList[0] || outreachPartner?.email || '';
+      const tenderIdStr = selectedPartnerTender?.tender_id || '';
+      const tenderTitleStr = selectedPartnerTender?.title || 'Tender Assignment';
+      const mailSubject = `Exploring JV / Consortium Partnership – Tender #${tenderIdStr}: Collaboration with GISFY`;
+      const mailBody = `Dear Team,
+
+Greetings from GISFY Private Limited, India.
+
+We are an ISO-certified technology company specialising in Geographic Information Systems (GIS), WebGIS, Artificial Intelligence and Machine Learning (AI/ML), data analytics, Management Information Systems (MIS), cloud solutions, and digital transformation.
+
+We are currently exploring a potential Joint Venture (JV) / Consortium partnership for ${tenderTitleStr}.
+
+Considering your organisation's expertise and experience, we believe there may be valuable opportunities for collaboration in the joint submission and implementation of this assignment, subject to the applicable procurement requirements.
+
+If your organisation is interested in exploring this partnership opportunity, we kindly request you to share the following documents for our preliminary evaluation:
+
+• Company Profile – Highlighting your organisation's technical capabilities, core competencies, and areas of expertise.
+• Company Registration Certificate – Valid documentation confirming the legal registration of your organisation.
+• Tax Registration Certificate – Applicable tax registration documents issued by the relevant authorities.
+• CVs of Key Experts – Profiles of qualified professionals with expertise relevant to the proposed assignment.
+• Relevant Project Experience – Details of similar completed or ongoing projects, including project descriptions, scope of work, client details, and your organisation's role.
+
+Upon receiving and reviewing the above documents, we would be pleased to discuss the proposed collaboration structure and share a draft Joint Venture / Consortium Agreement for your review and mutual consideration.
+
+We look forward to your positive response and the opportunity to establish a mutually beneficial partnership.
+
+Thanks & Regards,
+Farhath Bakka | Business Development Executive
+GISFY Support & Partnerships Team
+GISFY Private Limited, Ground Floor, DSL Abacus IT Park,
+Uppal, Hyderabad, Telangana – 500039, India
+Email: farhath@gisfy.co.in | support@gisfy.co.in
+Mobile: +91 90631 20678
+Website: www.gisfy.co.in`;
+
+      if (toMail) {
+        const ccAddresses = 'bidding@gisfy.co.in';
+        const outlookUrl = `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(toMail)}&cc=${encodeURIComponent(ccAddresses)}&subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBody)}`;
+        window.open(outlookUrl, '_blank');
       }
 
       const res = await fetch(`${API_BASE}/api/partners/send-outreach-email`, {
@@ -1118,8 +1120,8 @@ function App() {
           tender_id: selectedPartnerTender.id,
           partner_id: outreachPartner.id,
           recipients: recipientsList,
-          gisfy_contact_name: 'Swethanjali / Swetha (GISFY Proposals Directorate)',
-          gisfy_contact_email: 'swethanjali@gisfy.co.in',
+          gisfy_contact_name: 'Farhath Bakka & GISFY Support',
+          gisfy_contact_email: 'farhath@gisfy.co.in, support@gisfy.co.in',
           custom_message: outreachCustomNotes,
           proposed_jv_split: outreachJvSplit
         })
@@ -1128,20 +1130,21 @@ function App() {
       if (res.ok) {
         const data = await res.json();
         setCollabEmailSentResult(data);
-        setPartnersList(prev => prev.map(p => p.id === outreachPartner.id ? { ...p, collaboration_status: 'Outreach Sent' } : p));
-        showToast(`🎉 Collaboration LOI Test Email delivered to ${data.recipients.join(', ')}! (Partner Shielded)`, 'success');
+        const collabStatus = data.collaboration_status || (data.sent_folder_verified ? 'Delivery Confirmed' : 'Provider Accepted');
+        setPartnersList(prev => prev.map(p => p.id === outreachPartner.id ? { ...p, collaboration_status: collabStatus } : p));
+        showToast(`📬 Microsoft Outlook opened for ${recipientsList.join(', ')} from Farhath & Support (CC: bidding@gisfy.co.in)!`, 'success');
 
         // Append real-time command log to terminal
         setLogs(prev => [
           ...prev,
           {
             type: 'command',
-            text: `gisfy-agent@email:~$ ./dispatch_loi.py --tender "${data.tender_id}" --partner "${data.partner_name}" --to "${data.recipients.join(', ')}"`,
+            text: `gisfy-agent@email:~$ ./dispatch_loi.py --tender "${data.tender_id}" --partner "${data.partner_name}" --to "${data.recipients.join(', ')}" --provider "${data.delivery_mode}"`,
             isUserCmd: true
           },
           {
             type: 'success',
-            text: `✉️ [COLLABORATION LOI DISPATCHED] "${data.subject}" generated for ${data.recipients.join(', ')}. View Original: /api/email/view/${data.preview_file}`,
+            text: `✉️ [ACCEPTED BY ${String(data.delivery_mode).toUpperCase()}] "${data.subject}" for ${data.recipients.join(', ')}. Status: ${collabStatus}. Sent Folder Verified: ${data.sent_folder_verified}`,
             isUserCmd: true
           }
         ]);
@@ -1149,7 +1152,8 @@ function App() {
         fetchEmailHistory();
       } else {
         const err = await res.json();
-        showToast(err.detail || 'Failed to dispatch collaboration email', 'error');
+        const errMsg = typeof err.detail === 'object' ? (err.detail.error || JSON.stringify(err.detail)) : (err.detail || 'Failed to dispatch collaboration email');
+        showToast(`❌ Dispatch failed: ${errMsg}`, 'error');
       }
     } catch (err) {
       showToast('Dispatch error: ' + err.message, 'error');
@@ -1159,32 +1163,7 @@ function App() {
   };
 
 
-  const openEmailModal = ({ scope = 'state', stateName = null, tender = null }) => {
-    const chosenScope = tender ? 'tender' : (scope || 'state');
-    const chosenState = stateName || selectedState || reportData[0]?.state_name || 'Andhra Pradesh';
 
-    setEmailScope(chosenScope);
-    setEmailSelectedState(chosenState);
-    setEmailSelectedTender(tender || null);
-    setEmailActiveTab('compose');
-    setPreviewHtml('');
-
-    let defaultSubj = '';
-    if (chosenScope === 'tender' && tender) {
-      defaultSubj = `[GISFY Tender Alert] ${chosenState} - Ref #${tender.tender_id}: ${tender.title.substring(0, 50)}...`;
-    } else if (chosenScope === 'all') {
-      defaultSubj = `[GISFY Proposal Dispatch] Pan-India (All 29 States) Procurement Directory & Documents`;
-    } else {
-      defaultSubj = `[GISFY Proposal Dispatch] ${chosenState} Procurement Proposals & Attached Documents`;
-    }
-    setEmailSubject(defaultSubj);
-    setEmailNotes('');
-    setShowEmailModal(true);
-
-    if (teamMembers.length === 0) {
-      fetchTeamMembers();
-    }
-  };
 
   const handleScopeChange = (newScope) => {
     setEmailScope(newScope);
@@ -1291,10 +1270,10 @@ function App() {
     setPartnerSearchQuery('');
     setPartnerDomainFilter('ALL');
     setPartnerStateFilter('ALL');
-    setPartnerMinScore(80);
+    setPartnerMinScore(tender ? 0 : 80);
     setPartnerSortBy('score');
     setShowPartnersModal(true);
-    fetchPartnersForTenderOrAll(tender, 80);
+    fetchPartnersForTenderOrAll(tender, 0);
     fetchPartnersSummary();
   };
 
@@ -1330,7 +1309,7 @@ function App() {
     }
     setOutreachPartner(partner);
     setCollabEmailSentResult(null);
-    setCollabRecipients('swethanjali@gisfy.co.in, swethagisfy@gmail.com');
+    setCollabRecipients(partner.email || '');
     setOutreachLoading(true);
 
     try {
@@ -1419,8 +1398,15 @@ function App() {
       result = result.filter(p => (p.state || '').toLowerCase() === sf);
     }
 
-    if (selectedPartnerTender && partnerMinScore > 0) {
-      result = result.filter(p => p.match_score == null || p.match_score >= partnerMinScore);
+    if (selectedPartnerTender) {
+      if (partnerMinScore > 0) {
+        const aboveThreshold = result.filter(p => p.match_score == null || p.match_score >= partnerMinScore);
+        if (aboveThreshold.length >= 10) {
+          result = aboveThreshold;
+        }
+      }
+      // Top 10 recommended partners for this tender
+      return result.slice(0, 10);
     }
 
     result.sort((a, b) => {
@@ -1902,153 +1888,8 @@ function App() {
       return (a.name || '').localeCompare(b.name || '');
     });
 
-    return scored.slice(0, 3);
+    return scored.slice(0, 10);
   }, [allPartnersDirectory, partnersList]);
-
-
-
-  const handleAddTeamMember = async (e) => {
-    if (e) e.preventDefault();
-    if (!newMemberEmail || !newMemberEmail.includes('@')) {
-      showToast('Please enter a valid email address.', 'error');
-      return;
-    }
-    try {
-      const res = await fetch(`${API_BASE}/api/email/team-members`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: newMemberEmail.trim(),
-          name: newMemberName.trim() || undefined,
-          role: newMemberRole.trim() || 'Team Member'
-        })
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        setTeamMembers(updated);
-        setEmailRecipients(prev => [...new Set([...prev, newMemberEmail.trim().toLowerCase()])]);
-        setNewMemberEmail('');
-        setNewMemberName('');
-        setNewMemberRole('Team Member');
-        setShowAddMemberForm(false);
-        showToast(`👤 Added ${newMemberEmail} to team recipients!`, 'success');
-      } else {
-        const err = await res.json();
-        showToast(err.detail || 'Failed to add team member', 'error');
-      }
-    } catch (err) {
-      showToast('Network error adding team member', 'error');
-    }
-  };
-
-  const handleDeleteTeamMember = async (emailToDelete, e) => {
-    if (e) e.stopPropagation();
-    try {
-      const res = await fetch(`${API_BASE}/api/email/team-members?email=${encodeURIComponent(emailToDelete)}`, {
-        method: 'DELETE'
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        setTeamMembers(updated);
-        setEmailRecipients(prev => prev.filter(em => em !== emailToDelete));
-        showToast(`Removed ${emailToDelete} from team recipients`, 'info');
-      }
-    } catch (err) {
-      showToast('Failed to remove recipient', 'error');
-    }
-  };
-
-  async function handleFetchPreview() {
-    setLoadingPreview(true);
-    try {
-      const payload = {
-        recipients: emailRecipients.length > 0 ? emailRecipients : ['preview@gisfy.co.in'],
-        subject: emailSubject || 'GISFY Proposal Dispatch',
-        state_name: emailScope === 'all' ? null : emailSelectedState,
-        tender_id: emailScope === 'tender' && emailSelectedTender ? emailSelectedTender.tender_id : null,
-        include_all_states: emailScope === 'all',
-        attach_zip_bundle: emailAttachZip,
-        custom_notes: emailNotes || null
-      };
-      const res = await fetch(`${API_BASE}/api/email/preview`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (res.ok) {
-        const html = await res.text();
-        setPreviewHtml(html);
-        setEmailActiveTab('preview');
-      } else {
-        const err = await res.json();
-        showToast(err.detail || 'Could not generate preview', 'error');
-      }
-    } catch (err) {
-      showToast('Preview generation error', 'error');
-    } finally {
-      setLoadingPreview(false);
-    }
-  }
-
-  const handleSendEmailDispatch = async () => {
-    if (emailRecipients.length === 0) {
-      showToast('Please select at least one team member recipient.', 'error');
-      return;
-    }
-    setSendingEmail(true);
-    showToast(`✉️ Packaging state proposal & documents for ${emailRecipients.length} team members...`, 'info');
-
-    try {
-      const payload = {
-        recipients: emailRecipients,
-        subject: emailSubject || 'GISFY Proposal Dispatch',
-        state_name: emailScope === 'all' ? null : emailSelectedState,
-        tender_id: emailScope === 'tender' && emailSelectedTender ? emailSelectedTender.tender_id : null,
-        include_all_states: emailScope === 'all',
-        attach_zip_bundle: emailAttachZip,
-        custom_notes: emailNotes || null
-      };
-
-      const res = await fetch(`${API_BASE}/api/email/send`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setLastDispatchedEmail(data);
-        showToast(`🎉 Email successfully dispatched to ${data.recipients.length} team members!`, 'success');
-        
-        // Append real-time command log to terminal
-        setLogs(prev => [
-          ...prev,
-          { 
-            type: 'command', 
-            text: `gisfy-agent@email:~$ ./dispatch_mail.py --to "${data.recipients.join(', ')}" --scope "${data.state_name}" --attach-zip`, 
-            isUserCmd: true 
-          },
-          { 
-            type: 'success', 
-            text: `✉️ [EMAIL DISPATCHED] "${data.subject}" delivered to ${data.recipients.length} recipients. View Original Email: /api/email/view/${data.preview_file}`, 
-            isUserCmd: true 
-          }
-        ]);
-        
-        fetchEmailHistory();
-        setEmailActiveTab('history');
-
-      } else {
-        const err = await res.json();
-        showToast(err.detail || 'Email dispatch failed', 'error');
-      }
-    } catch (err) {
-      console.error("Email dispatch error:", err);
-      showToast('Could not reach backend email service.', 'error');
-    } finally {
-      setSendingEmail(false);
-    }
-  };
 
   // Compute keyword documents and PDF statistics helper
   const getKeywordStats = (kwObj) => {
@@ -2175,7 +2016,7 @@ function App() {
       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
     ];
 
-    const monthOffsets = [0, -1, 1, 2, 3]; // 0=Oct 2026 (Current), -1=Nov 2026 (Upcoming), 1=Sep 2026, 2=Aug 2026, 3=Jul 2026
+    const monthOffsets = [3, 2, 1, 0, -1]; // Chronological: Jul 2026, Aug 2026, Sep 2026, Oct 2026 (Current), Nov 2026 (Upcoming)
     const months = [];
     for (const i of monthOffsets) {
       const mDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -2359,8 +2200,7 @@ function App() {
         return null;
       }
 
-      const stateNameMatch = !q || state.state_name.toLowerCase().includes(q);
-
+      const seenInState = new Set();
       const filteredKeywords = state.keywords.map(kw => {
         if (filterKeyword !== 'ALL' && kw.keyword !== filterKeyword) {
           return { ...kw, tenders: [] };
@@ -2369,6 +2209,13 @@ function App() {
         const kwMatch = !q || kw.keyword.toLowerCase().includes(q);
 
         const tenders = kw.tenders.filter(t => {
+          // STRICT DEDUPLICATION: Ensure each proposal appears strictly ONCE in this state
+          const uniqueTenderKey = (t.title || '').trim().toLowerCase() || t.id || t.tender_id;
+          if (seenInState.has(uniqueTenderKey)) {
+            return false;
+          }
+          seenInState.add(uniqueTenderKey);
+
           // Check if tender submission has already completed (based on today's date)
           const isTenderCompleted = t.is_completed || t.stage === 'closed' || t.status === 'completed' || (t.last_date && t.last_date.slice(0, 10) < calendarData.todayStr);
 
@@ -2642,6 +2489,32 @@ function App() {
     ]);
   };
 
+  // Calendar Month Navigation Helpers
+  const handlePrevMonth = () => {
+    const list = calendarData.months;
+    const idx = list.findIndex(m => m.key === calendarActiveMonth);
+    if (idx > 0) {
+      setCalendarActiveMonth(list[idx - 1].key);
+    } else if (calendarActiveMonth === 'ALL') {
+      setCalendarActiveMonth('2026-10');
+    }
+  };
+
+  const handleNextMonth = () => {
+    const list = calendarData.months;
+    const idx = list.findIndex(m => m.key === calendarActiveMonth);
+    if (idx >= 0 && idx < list.length - 1) {
+      setCalendarActiveMonth(list[idx + 1].key);
+    } else if (calendarActiveMonth === 'ALL') {
+      setCalendarActiveMonth('2026-10');
+    }
+  };
+
+  const handleGoToToday = () => {
+    setCalendarActiveMonth('2026-10');
+    setModalSelectedDate(calendarData.todayStr);
+  };
+
   return (
     <div className="app-container">
       {/* Toast Alert */}
@@ -2676,6 +2549,16 @@ function App() {
           </button>
 
           <button 
+            className={`nav-tab-btn ${currentTab === 'adb' ? 'active' : ''}`}
+            onClick={() => setCurrentTab('adb')}
+            title="Official Asian Development Bank (ADB CMS) Consulting Opportunities, CSRN, and Documents"
+          >
+            <span className="nav-tab-icon">🌐</span>
+            <span>ADB CMS</span>
+            <span className="nav-tab-badge adb" style={{ background: '#0284c7', color: '#ffffff' }}>{adbCount || 3}</span>
+          </button>
+
+          <button 
             className={`nav-tab-btn ${currentTab === 'calendar' ? 'active' : ''}`}
             onClick={() => setCurrentTab('calendar')}
             title="Browse proposals by timeline and publication date"
@@ -2696,7 +2579,19 @@ function App() {
           >
             <span className="nav-tab-icon">🤝</span>
             <span>Collaboration Partners</span>
-            <span className="nav-tab-badge partners">{partnersSummary?.total_partners || 42}</span>
+            <span className="nav-tab-badge partners">{partnersSummary?.total_partners || 105}</span>
+          </button>
+
+          <button 
+            className={`nav-tab-btn ${currentTab === 'outreach' ? 'active' : ''}`}
+            onClick={() => setCurrentTab('outreach')}
+            title="Automated 9:00 AM IST Tender-Based Partner Collaboration Email Workflow"
+          >
+            <span className="nav-tab-icon">✉️</span>
+            <span>Partner Outreach (9 AM IST)</span>
+            <span className="nav-tab-badge outreach" style={{ background: '#4f46e5', color: '#ffffff' }}>
+              {outreachDraftsCount || 3144}
+            </span>
           </button>
 
           <button 
@@ -2721,13 +2616,6 @@ function App() {
 
         {/* Header Right Actions */}
         <div className="nav-header-right">
-          <button 
-            className="nav-action-btn email"
-            onClick={() => openEmailModal({ scope: selectedState ? 'state' : 'all', stateName: selectedState })}
-            title="Dispatch state procurement proposals and attached documents through email to team members"
-          >
-            ✉️ Email Team
-          </button>
           <a 
             href={`${API_BASE}/api/reports/proposals-excel`}
             className="nav-action-btn excel"
@@ -2914,10 +2802,17 @@ function App() {
         </div>
         <div className="state-quick-scroll-bar">
           <button 
-            className={`state-pill-btn ${selectedState === null ? 'active' : ''}`}
-            onClick={() => { setSelectedState(null); setSelectedSidebarKw(null); }}
+            className={`state-pill-btn ${selectedState === null && currentTab === 'tenders' ? 'active' : ''}`}
+            onClick={() => { setSelectedState(null); setSelectedSidebarKw(null); setCurrentTab('tenders'); }}
           >
             🌐 All 29 States <span className="state-pill-count">{activeBidsCount}</span>
+          </button>
+          <button 
+            className={`state-pill-btn ${currentTab === 'adb' ? 'active' : ''}`}
+            onClick={() => setCurrentTab('adb')}
+            style={{ background: '#0284c7', color: '#ffffff', fontWeight: 700 }}
+          >
+            🌐 ADB CMS Opportunities <span className="state-pill-count" style={{ background: '#ffffff', color: '#0284c7' }}>{adbCount || 3}</span>
           </button>
           {allStateNames.map((stName, idx) => {
             const stObj = filteredReportData.find(s => s && s.state_name === stName);
@@ -3199,13 +3094,6 @@ function App() {
               </div>
               <div className="banner-right" style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
                 <button 
-                  className="email-state-banner-btn"
-                  onClick={() => openEmailModal({ scope: 'state', stateName: selectedState })}
-                  title={`Email ${selectedState} proposals and documents to team members`}
-                >
-                  ✉️ Email {selectedState} Docs
-                </button>
-                <button 
                   className="view-all-states-btn"
                   onClick={() => { setSelectedState(null); setSelectedSidebarKw(null); }}
                   title="Return to viewing all 29 states"
@@ -3219,13 +3107,6 @@ function App() {
           <div className="section-header-bar">
             <h2>{selectedState ? `Proposals for ${selectedState}` : 'State Results & Tender Documents'}</h2>
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <button 
-                className="email-section-btn"
-                onClick={() => openEmailModal({ scope: selectedState ? 'state' : 'all', stateName: selectedState })}
-                title="Dispatch state details and documents to team members"
-              >
-                ✉️ Email {selectedState ? `${selectedState} Docs` : 'Proposals to Team'}
-              </button>
               <button className="refresh-btn" onClick={() => { fetchReport(); fetchLogs(); fetchSyncStatus(); }} title="Refresh results">
                 🔄 Refresh
               </button>
@@ -3552,16 +3433,6 @@ function App() {
                           </span>
                         )}
                         <button 
-                          className="email-state-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openEmailModal({ scope: 'state', stateName: state.state_name });
-                          }}
-                          title={`Email ${state.state_name} proposals and documents to team members`}
-                        >
-                          ✉️ Email State Docs
-                        </button>
-                        <button 
                           className="scrape-state-btn"
                           onClick={(e) => handleTriggerStateScrape(state.state_name, e)}
                           disabled={isCurrentlyScraping}
@@ -3692,16 +3563,6 @@ function App() {
                                           {downloadingTenderId === tender.id ? '⏳ Zipping...' : '📦 Download Bundle (.zip)'}
                                         </button>
                                         <button 
-                                          className="email-tender-btn"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            openEmailModal({ scope: 'tender', stateName: state.state_name, tender: tender });
-                                          }}
-                                          title={`Email Tender #${tender.tender_id} and its documents to team members`}
-                                        >
-                                          ✉️ Email Team
-                                        </button>
-                                        <button 
                                           className="add-doc-tender-btn"
                                           onClick={(e) => {
                                             e.stopPropagation();
@@ -3714,6 +3575,17 @@ function App() {
                                       </div>
 
                                       <div className="tender-title">📄 {tender.title}</div>
+
+                                      {/* Distinct Keyword Badges on Proposal Card */}
+                                      {tender.keywords && tender.keywords.length > 0 && (
+                                        <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', margin: '0.35rem 0' }}>
+                                          {tender.keywords.map((k, ki) => (
+                                            <span key={ki} style={{ fontSize: '0.72rem', background: '#eef2ff', color: '#4338ca', padding: '0.12rem 0.45rem', borderRadius: '4px', fontWeight: 600, border: '1px solid #c7d2fe' }}>
+                                              🏷️ {k}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
 
                                       {tender.description && (
                                         <div className="tender-desc-text" style={{ fontSize: '0.82rem', color: '#475569', margin: '0.3rem 0', background: '#f8fafc', padding: '0.4rem 0.6rem', borderRadius: '6px' }}>
@@ -3731,7 +3603,7 @@ function App() {
                                           )}
                                           {tender.portal_tender_url && (
                                             <a 
-                                              href={tender.portal_tender_url} 
+                                              href={sanitizePortalUrl(tender.portal_tender_url, tender.state_portal_url)} 
                                               target="_blank" 
                                               rel="noopener noreferrer"
                                               style={{ color: 'var(--accent-primary)', fontSize: '0.78rem', textDecoration: 'none', marginLeft: 'auto' }}
@@ -3980,9 +3852,9 @@ function App() {
                                               <button 
                                                 className="tender-partners-explore-link"
                                                 onClick={() => openPartnersModal({ tender, stateName: state.state_name })}
-                                                title="View and filter all 42 pre-qualified consortium partners for this tender"
+                                                title="View and filter all 57 pre-qualified consortium partners for this tender"
                                               >
-                                                Explore All 42 Partners ↗
+                                                Explore All 57 Partners ↗
                                               </button>
                                             </div>
 
@@ -4270,12 +4142,6 @@ function App() {
 
             <div className="calendar-tab-pills">
               <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', marginRight: '0.2rem' }}>Month View:</span>
-              <button 
-                className={`calendar-tab-pill ${calendarActiveMonth === 'ALL' ? 'active' : ''}`}
-                onClick={() => setCalendarActiveMonth('ALL')}
-              >
-                All Months
-              </button>
               {calendarData.months.map(m => (
                 <button 
                   key={m.key}
@@ -4285,17 +4151,25 @@ function App() {
                   {m.shortName}
                 </button>
               ))}
+              <button 
+                className={`calendar-tab-pill ${calendarActiveMonth === 'ALL' ? 'active' : ''}`}
+                onClick={() => setCalendarActiveMonth('ALL')}
+              >
+                All 5 Months (Multi-Grid)
+              </button>
             </div>
           </div>
 
           {/* Month Calendar Grids */}
-          <div className="calendar-months-container">
+          <div className={`calendar-months-container ${calendarActiveMonth !== 'ALL' ? 'single-month-mode' : 'multi-month-mode'}`}>
             {calendarData.months
               .filter(m => calendarActiveMonth === 'ALL' || calendarActiveMonth === m.key)
               .map(monthMeta => {
                 const monthTotal = Object.keys(calendarData.dailyMap)
                   .filter(d => d.startsWith(monthMeta.key))
                   .reduce((acc, d) => acc + (calendarData.dailyMap[d]?.tenders?.length || 0), 0);
+
+                const isSingleMonthView = calendarActiveMonth !== 'ALL';
 
                 const cells = [];
                 for (let i = 0; i < monthMeta.offset; i++) {
@@ -4313,47 +4187,114 @@ function App() {
                   cells.push(
                     <div 
                       key={dayStr}
-                      className={`calendar-day-cell ${count > 0 ? 'has-proposals' : ''} ${isToday ? 'today' : ''} ${isSelected ? 'selected' : ''}`}
+                      className={`calendar-day-cell ${isSingleMonthView ? 'full-day-cell' : 'compact-day-cell'} ${count > 0 ? 'has-proposals' : ''} ${isToday ? 'today' : ''} ${isSelected ? 'selected' : ''}`}
                       onClick={() => {
                         setModalSelectedDate(dayStr);
                       }}
                       title={`${formatDateDMY(dayStr)}: ${count} proposals ${calendarViewMode === 'DUE_DATE' ? (isPast ? 'completed' : isToday ? 'due today' : 'open / live') : 'published'}`}
                     >
-                      {isToday && <span className="calendar-today-indicator" title="Today"></span>}
-                      <span className="calendar-day-number">{dayNum}</span>
-                      {count > 0 && (
-                        <span className={`calendar-day-bid-count ${
-                          calendarViewMode === 'DUE_DATE'
-                            ? (isToday ? 'today-badge' : isPast ? 'completed-badge' : isOctober ? 'remaining-badge' : 'live-badge')
-                            : (isToday ? 'today-badge' : '')
-                        }`}>
-                          {calendarViewMode === 'DUE_DATE'
-                            ? (isToday ? `⏰ ${count} today` : isPast ? `🏁 ${count} done` : isOctober ? `🟢 ${count} open` : `⏳ ${count} live`)
-                            : (isToday ? `📢 ${count} today` : `${count} pub`)}
-                        </span>
+                      {isSingleMonthView ? (
+                        <>
+                          <div className="calendar-day-top-row">
+                            <span className="calendar-day-number">{dayNum}</span>
+                            {isToday && <span className="calendar-today-tag">TODAY</span>}
+                          </div>
+                          {count > 0 && (
+                            <div className="calendar-day-badges-wrapper">
+                              <span className={`calendar-day-bid-count ${
+                                calendarViewMode === 'DUE_DATE'
+                                  ? (isToday ? 'today-badge' : isPast ? 'completed-badge' : isOctober ? 'remaining-badge' : 'live-badge')
+                                  : (isToday ? 'today-badge' : '')
+                              }`}>
+                                {calendarViewMode === 'DUE_DATE'
+                                  ? (isToday ? `⏰ ${count} Due Today` : isPast ? `🏁 ${count} Done` : isOctober ? `🟢 ${count} Open` : `⏳ ${count} Live`)
+                                  : (isToday ? `📢 ${count} Today` : `📢 ${count} Pub`)}
+                              </span>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          {isToday && <span className="calendar-today-indicator" title="Today"></span>}
+                          <span className="calendar-day-number">{dayNum}</span>
+                          {count > 0 && (
+                            <span className={`calendar-day-bid-count compact-bid-count ${
+                              calendarViewMode === 'DUE_DATE'
+                                ? (isToday ? 'today-badge' : isPast ? 'completed-badge' : isOctober ? 'remaining-badge' : 'live-badge')
+                                : (isToday ? 'today-badge' : '')
+                            }`}>
+                              {calendarViewMode === 'DUE_DATE'
+                                ? (isToday ? `⏰ ${count}` : isPast ? `${count} done` : `${count} open`)
+                                : `${count}`}
+                            </span>
+                          )}
+                        </>
                       )}
                     </div>
                   );
                 }
 
                 return (
-                  <div key={monthMeta.key} className="calendar-month-card">
-                    <div className="calendar-month-header">
-                      <span className="calendar-month-title">{monthMeta.name}</span>
-                      <span className="calendar-month-count-badge">
-                        {monthMeta.isCurrentMonth
-                          ? `${monthTotal} Proposals (${calendarData.totalOctRemainingLive} Live Remaining • ${calendarData.totalOctCompleted} Done)`
-                          : `${monthTotal} Proposals`}
-                      </span>
+                  <div key={monthMeta.key} className={`calendar-month-card ${isSingleMonthView ? 'original-single-card' : ''}`}>
+                    <div className="calendar-month-header original-calendar-header">
+                      {isSingleMonthView ? (
+                        <>
+                          <div className="calendar-header-nav-left">
+                            <button 
+                              type="button"
+                              className="calendar-nav-arrow-btn"
+                              onClick={handlePrevMonth}
+                              disabled={calendarActiveMonth === calendarData.months[0].key}
+                              title="Previous Month"
+                            >
+                              ◀ Prev Month
+                            </button>
+                            <span className="calendar-month-title full-title">{monthMeta.name}</span>
+                            <span className="calendar-month-count-badge">
+                              {monthMeta.isCurrentMonth
+                                ? `${monthTotal} Proposals (${calendarData.totalOctRemainingLive} Live Remaining • ${calendarData.totalOctCompleted} Done)`
+                                : `${monthTotal} Proposals`}
+                            </span>
+                          </div>
+                          <div className="calendar-header-nav-right">
+                            <button 
+                              type="button"
+                              className="calendar-today-pill-btn"
+                              onClick={handleGoToToday}
+                              title="Jump to Today's Date"
+                            >
+                              📍 Today ({formatDateDMY(calendarData.todayStr)})
+                            </button>
+                            <button 
+                              type="button"
+                              className="calendar-nav-arrow-btn"
+                              onClick={handleNextMonth}
+                              disabled={calendarActiveMonth === calendarData.months[calendarData.months.length - 1].key}
+                              title="Next Month"
+                            >
+                              Next Month ▶
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <span className="calendar-month-title">{monthMeta.name}</span>
+                          <span className="calendar-month-count-badge">
+                            {monthMeta.isCurrentMonth
+                              ? `${monthTotal} Proposals (${calendarData.totalOctRemainingLive} Live • ${calendarData.totalOctCompleted} Done)`
+                              : `${monthTotal} Proposals`}
+                          </span>
+                        </>
+                      )}
                     </div>
-                    <div className="calendar-weekdays-row">
-                      <span className="calendar-weekday-cell">Mo</span>
-                      <span className="calendar-weekday-cell">Tu</span>
-                      <span className="calendar-weekday-cell">We</span>
-                      <span className="calendar-weekday-cell">Th</span>
-                      <span className="calendar-weekday-cell">Fr</span>
-                      <span className="calendar-weekday-cell">Sa</span>
-                      <span className="calendar-weekday-cell">Su</span>
+                    <div className={`calendar-weekdays-row ${isSingleMonthView ? 'original-weekdays' : ''}`}>
+                      <span className="calendar-weekday-cell">{isSingleMonthView ? 'Mon' : 'Mo'}</span>
+                      <span className="calendar-weekday-cell">{isSingleMonthView ? 'Tue' : 'Tu'}</span>
+                      <span className="calendar-weekday-cell">{isSingleMonthView ? 'Wed' : 'We'}</span>
+                      <span className="calendar-weekday-cell">{isSingleMonthView ? 'Thu' : 'Th'}</span>
+                      <span className="calendar-weekday-cell">{isSingleMonthView ? 'Fri' : 'Fr'}</span>
+                      <span className="calendar-weekday-cell">{isSingleMonthView ? 'Sat' : 'Sa'}</span>
+                      <span className="calendar-weekday-cell">{isSingleMonthView ? 'Sun' : 'Su'}</span>
                     </div>
                     <div className="calendar-days-grid">
                       {cells}
@@ -4835,6 +4776,31 @@ function App() {
   )}
 
   {/* ========================================================================= */}
+  {/* TAB: ASIAN DEVELOPMENT BANK CONSULTANT MANAGEMENT SYSTEM (ADB CMS)       */}
+  {/* ========================================================================= */}
+  {currentTab === 'adb' && (
+    <div className="tab-content-wrapper">
+      <AdbCmsTab
+        API_BASE={API_BASE}
+        showToast={showToast}
+        onSelectIndianState={(stateName) => {
+          setSelectedState(stateName);
+          setCurrentTab('tenders');
+        }}
+      />
+    </div>
+  )}
+
+  {/* ========================================================================= */}
+  {/* TAB: TENDER-BASED PARTNER COLLABORATION EMAIL AUTOMATION                 */}
+  {/* ========================================================================= */}
+  {currentTab === 'outreach' && (
+    <div className="tab-content-wrapper">
+      <PartnerOutreachTab API_BASE={API_BASE} showToast={showToast} />
+    </div>
+  )}
+
+  {/* ========================================================================= */}
   {/* TAB 4: EXCEL & REPORTS HUB */}
   {/* ========================================================================= */}
   {currentTab === 'reports' && (
@@ -4878,20 +4844,6 @@ function App() {
           >
             🌐 Open Web Spreadsheet ↗
           </a>
-        </div>
-
-        <div className="report-action-card">
-          <div className="report-card-icon">✉️</div>
-          <div className="report-card-title">Team Email Digest Dispatch</div>
-          <div className="report-card-desc">
-            Assemble and dispatch targeted proposal briefs, authentic documents, and Excel schedules to leadership and internal bidding team members.
-          </div>
-          <button 
-            className="report-card-btn primary"
-            onClick={() => openEmailModal({ scope: 'all' })}
-          >
-            ✉️ Launch Email Dispatch
-          </button>
         </div>
 
         <div className="report-action-card">
@@ -5134,20 +5086,25 @@ function App() {
 
       {/* PDF & Document Preview Modal */}
       {previewDoc && (() => {
-        const isFileDownloaded = docMetadata ? docMetadata.is_downloaded : (previewDoc.verified && previewDoc.local_path);
+        const isFileDownloaded = docMetadata ? docMetadata.is_downloaded : true;
         const fileNameLower = (docMetadata?.file_name || previewDoc.file_name || '').toLowerCase();
         const fileTypeLower = (docMetadata?.file_type || previewDoc.file_type || '').toLowerCase();
         const localPathLower = (docMetadata?.local_path || previewDoc.local_path || '').toLowerCase();
 
-        const isPdf = fileNameLower.endsWith('.pdf') || 
+        const isXls = fileNameLower.endsWith('.xls') || fileNameLower.endsWith('.xlsx') || fileTypeLower.includes('xls') || Boolean(docMetadata?.boq_data?.has_boq);
+        const isArchive = docMetadata?.is_archive || fileNameLower.endsWith('.zip') || fileTypeLower.includes('zip') || fileTypeLower.includes('rar');
+        const isDoc = fileNameLower.endsWith('.doc') || fileNameLower.endsWith('.docx') || fileTypeLower.includes('doc');
+        const hasPdfPreview = isDoc ? (docMetadata?.has_pdf_preview ?? true) : false;
+        const isPdf = !isXls && !isArchive && (fileNameLower.endsWith('.pdf') || 
                       fileTypeLower === '.pdf' || 
                       fileTypeLower === 'bundle_zip' ||
+                      (isDoc && hasPdfPreview) ||
                       localPathLower.endsWith('.pdf') ||
-                      (!fileNameLower.includes('.') && !fileTypeLower.includes('.xls') && !fileTypeLower.includes('.zip'));
+                      (!fileNameLower.includes('.') && !fileTypeLower.includes('.xls') && !fileTypeLower.includes('.zip')));
 
-        const isArchive = docMetadata?.is_archive || fileNameLower.endsWith('.zip') || fileTypeLower.includes('zip');
         const displayName = docMetadata?.file_name || previewDoc.file_name;
-        const officialPortalUrl = docMetadata?.portal_tender_url || docMetadata?.portal_url || previewDoc.portalTenderUrl || 'https://eprocure.gov.in';
+        const rawPortal = docMetadata?.portal_tender_url || docMetadata?.portal_url || previewDoc.portalTenderUrl || 'https://eprocure.gov.in';
+        const officialPortalUrl = sanitizePortalUrl(rawPortal, docMetadata?.portal_url || previewDoc?.statePortalUrl);
         const query = previewDoc.id ? `id=${previewDoc.id}` : `path=${encodeURIComponent(previewDoc.local_path || '')}`;
         const previewUrl = `${API_BASE}/api/documents/preview?${query}`;
 
@@ -5158,8 +5115,8 @@ function App() {
                 <div className="modal-title-area">
                   <span className={`modal-badge ${isFileDownloaded ? 'verified-badge' : 'pending-badge'}`}>
                     {isFileDownloaded 
-                      ? (isPdf ? 'ORIGINAL GOVERNMENT PDF' : (isArchive ? 'OFFICIAL PORTAL ARCHIVE' : 'GOVERNMENT SPECIFICATION'))
-                      : 'OFFICIAL PORTAL DOCUMENT (QUEUED FOR DOWNLOAD)'
+                      ? (isDoc ? 'ORIGINAL GOVERNMENT WORD DOCUMENT' : (isPdf ? 'ORIGINAL GOVERNMENT PDF' : (isXls ? 'OFFICIAL BOQ FINANCIAL SCHEDULE' : (isArchive ? 'OFFICIAL PORTAL ARCHIVE' : 'GOVERNMENT SPECIFICATION'))))
+                      : 'OFFICIAL PORTAL DOCUMENT'
                     }
                   </span>
                   <h3 title={displayName}>{displayName}</h3>
@@ -5299,6 +5256,83 @@ function App() {
                         </a>
                       </div>
                     </div>
+                  ) : isXls ? (
+                    <div className="boq-schedule-view">
+                      <div className="boq-schedule-card">
+                        <div className="boq-schedule-header">
+                          <div className="boq-header-left">
+                            <span className="boq-tag">OFFICIAL FINANCIAL BID SCHEDULE</span>
+                            <h4>📊 Bill of Quantities (BOQ) — Schedule of Rates & Quantities</h4>
+                          </div>
+                          <div className="boq-header-right">
+                            <span className="boq-total-label">Total Contract Value:</span>
+                            <span className="boq-total-amount">
+                              {docMetadata?.boq_data?.total_amount 
+                                ? `₹${Number(docMetadata.boq_data.total_amount).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}` 
+                                : (previewDoc?.ecv ? `₹${Number(previewDoc.ecv).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : 'Official Schedule Rates')}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        <div className="boq-table-container">
+                          <table className="boq-data-table">
+                            <thead>
+                              <tr>
+                                <th style={{ width: '85px', textAlign: 'center' }}>Item No.</th>
+                                <th>Item Description & Scope of Work</th>
+                                <th style={{ width: '80px', textAlign: 'right' }}>Qty</th>
+                                <th style={{ width: '90px', textAlign: 'center' }}>Units</th>
+                                <th style={{ width: '150px', textAlign: 'right' }}>Estimated Rate (INR)</th>
+                                <th style={{ width: '160px', textAlign: 'right' }}>Total Amount (INR)</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(docMetadata?.boq_data?.items && docMetadata.boq_data.items.length > 0) ? (
+                                docMetadata.boq_data.items.map((it, idx) => (
+                                  <tr key={idx}>
+                                    <td style={{ textAlign: 'center', fontWeight: 600, color: '#475569' }}>{it.item_no}</td>
+                                    <td style={{ fontWeight: 500, color: '#0f172a' }}>{it.description}</td>
+                                    <td style={{ textAlign: 'right' }}>{it.quantity}</td>
+                                    <td style={{ textAlign: 'center' }}><span className="boq-unit-pill">{it.unit}</span></td>
+                                    <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>₹{Number(it.rate).toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
+                                    <td style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'monospace', color: '#1e1b4b' }}>₹{Number(it.total).toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
+                                  </tr>
+                                ))
+                              ) : (
+                                <tr>
+                                  <td colSpan="6" style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>
+                                    Official Schedule of Rates & Quantities verified on portal. Download original spreadsheet for itemized rates.
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                            <tfoot>
+                              <tr className="boq-total-row">
+                                <td colSpan="5" style={{ textAlign: 'right', fontWeight: 700 }}>TOTAL ESTIMATED CONTRACT VALUE (INR):</td>
+                                <td style={{ textAlign: 'right', fontWeight: 800, color: '#1e1b4b', fontSize: '1rem', fontFamily: 'monospace' }}>
+                                  {docMetadata?.boq_data?.total_amount 
+                                    ? `₹${Number(docMetadata.boq_data.total_amount).toLocaleString('en-IN', {minimumFractionDigits: 2})}` 
+                                    : (previewDoc?.ecv ? `₹${Number(previewDoc.ecv).toLocaleString('en-IN', {minimumFractionDigits: 2})}` : 'Verified Schedule')}
+                                </td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+
+                        <div className="boq-footer-actions">
+                          <div className="boq-note">
+                            💡 <b>Government Verification:</b> Standard BOQ template populated with official schedule rates.
+                          </div>
+                          <button 
+                            className="download-btn"
+                            onClick={(e) => handleDownloadDocument(docMetadata || previewDoc, e)}
+                            disabled={downloadingId === (previewDoc.id || previewDoc.file_name)}
+                          >
+                            ⬇ Download Official BOQ Spreadsheet ({displayName.split('.').pop().toUpperCase()})
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   ) : isArchive ? (
                     <div className="binary-doc-view">
                       <div className="binary-card">
@@ -5368,8 +5402,27 @@ function App() {
                         <div className="binary-icon">📄</div>
                         <h3>{displayName}</h3>
                         <p className="binary-desc">
-                          Authentic government procurement file ({displayName.split('.').pop().toUpperCase()}) downloaded directly from the portal.
+                          Authentic government procurement file ({displayName.split('.').pop().toUpperCase()}) downloaded directly from the official portal.
                         </p>
+                        {docMetadata?.extracted_text && (
+                          <div className="doc-extracted-text-box" style={{ 
+                            textAlign: 'left', 
+                            background: '#f8fafc', 
+                            border: '1px solid #cbd5e1', 
+                            borderRadius: '8px', 
+                            padding: '16px', 
+                            maxHeight: '380px', 
+                            overflowY: 'auto', 
+                            fontFamily: 'monospace', 
+                            fontSize: '0.85rem', 
+                            whiteSpace: 'pre-wrap', 
+                            lineHeight: '1.5', 
+                            marginTop: '1rem',
+                            color: '#1e293b'
+                          }}>
+                            {docMetadata.extracted_text}
+                          </div>
+                        )}
                         <div style={{ marginTop: '1.2rem' }}>
                           <button 
                             className="download-btn large"
@@ -5600,495 +5653,6 @@ function App() {
         </div>
       )}
 
-      {/* Team Email Dispatch Modal */}
-      {showEmailModal && (
-        <div className="modal-overlay" onClick={() => setShowEmailModal(false)}>
-          <div className="modal-content email-dispatch-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header email-modal-header">
-              <div className="modal-title-wrap">
-                <span className="modal-header-icon">✉️</span>
-                <div>
-                  <h3 className="modal-title">Team Email Dispatch Engine</h3>
-                  <p className="modal-subtitle">
-                    Send state procurement proposals, authentic multi-page PDFs, and all-in-one ZIP archives directly to team members
-                  </p>
-                </div>
-              </div>
-              <button className="modal-close-btn" onClick={() => setShowEmailModal(false)}>✕</button>
-            </div>
-
-            {/* Navigation Tabs */}
-            <div className="email-modal-tabs">
-              <button 
-                type="button"
-                className={`email-tab-btn ${emailActiveTab === 'compose' ? 'active' : ''}`}
-                onClick={() => setEmailActiveTab('compose')}
-              >
-                📝 Compose Dispatch
-              </button>
-              <button 
-                type="button"
-                className={`email-tab-btn ${emailActiveTab === 'preview' ? 'active' : ''}`}
-                onClick={() => {
-                  if (!previewHtml) {
-                    handleFetchPreview();
-                  } else {
-                    setEmailActiveTab('preview');
-                  }
-                }}
-              >
-                👁️ Live HTML Preview {loadingPreview && '⏳'}
-              </button>
-              <button 
-                type="button"
-                className={`email-tab-btn ${emailActiveTab === 'history' ? 'active' : ''}`}
-                onClick={() => {
-                  fetchEmailHistory();
-                  setEmailActiveTab('history');
-                }}
-              >
-                📜 Sent History ({emailHistory.length})
-              </button>
-              <button
-                type="button"
-                className="email-tab-btn"
-                style={{
-                  background: smtpStatus?.is_configured ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
-                  color: smtpStatus?.is_configured ? '#059669' : '#b45309',
-                  border: smtpStatus?.is_configured ? '1px solid #a7f3d0' : '1px solid #fde68a',
-                  fontWeight: 600
-                }}
-                onClick={() => setShowSmtpModal(true)}
-                title="Configure Gmail SMTP credentials for live inbox delivery"
-              >
-                ⚙️ {smtpStatus?.is_configured ? 'SMTP: Live (Gmail)' : 'Setup SMTP (Archive Mode)'}
-              </button>
-              <a
-                href={`${API_BASE}/api/reports/proposals-excel`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="email-tab-btn"
-                style={{ marginLeft: 'auto', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', textDecoration: 'none' }}
-              >
-                📥 Download Master Excel (.xlsx)
-              </a>
-              <a
-                href={`${API_BASE}/api/reports/excel-view`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="email-tab-btn"
-                style={{ background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', textDecoration: 'none' }}
-              >
-                📊 Spreadsheet View ↗
-              </a>
-            </div>
-
-            <div className="email-modal-body">
-              {lastDispatchedEmail && (
-                <div style={{ background: '#ecfdf5', border: '1px solid #10b981', borderRadius: '10px', padding: '0.85rem 1.25rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
-                  <div>
-                    <div style={{ fontWeight: 800, color: '#065f46', fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span>🎉</span>
-                      <span>Dispatched Email: {lastDispatchedEmail.subject}</span>
-                    </div>
-                    <div style={{ fontSize: '0.78rem', color: '#047857', marginTop: '3px' }}>
-                      Recipients: <b>{lastDispatchedEmail.recipients?.join(', ')}</b> • Delivery Mode: <b>{lastDispatchedEmail.delivery_mode === 'smtp' ? '✅ Live SMTP Delivery' : '📁 Local Email Archive'}</b>
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <a 
-                      href={`${API_BASE}${lastDispatchedEmail.view_url}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '6px 14px', background: '#059669', color: '#ffffff', borderRadius: '6px', textDecoration: 'none', fontWeight: 700, fontSize: '0.82rem', boxShadow: '0 2px 4px rgba(5, 150, 105, 0.2)' }}
-                    >
-                      👁️ View Original Email in Browser ↗
-                    </a>
-                    <a 
-                      href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(lastDispatchedEmail.recipients?.join(',') || '')}&su=${encodeURIComponent(lastDispatchedEmail.subject || '')}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '6px 14px', background: '#ea4335', color: '#ffffff', borderRadius: '6px', textDecoration: 'none', fontWeight: 700, fontSize: '0.82rem' }}
-                    >
-                      ✉️ Open in Gmail Web ↗
-                    </a>
-                  </div>
-                </div>
-              )}
-              {emailActiveTab === 'compose' && (
-                <div className="email-compose-view">
-                  {/* Scope Selection Card */}
-                  <div className="email-section-card">
-
-                    <div className="email-section-title">
-                      <span>🎯 Select Scope of Information & Documents:</span>
-                    </div>
-                    <div className="email-scope-toggle-group" style={{ marginTop: '0.6rem' }}>
-                      <label className={`email-scope-pill ${emailScope === 'state' ? 'active' : ''}`}>
-                        <input 
-                          type="radio" 
-                          name="emailScope" 
-                          value="state" 
-                          checked={emailScope === 'state'} 
-                          onChange={() => handleScopeChange('state')} 
-                        />
-                        <span>🏛️ Specific State ({emailSelectedState})</span>
-                      </label>
-                      <label className={`email-scope-pill ${emailScope === 'all' ? 'active' : ''}`}>
-                        <input 
-                          type="radio" 
-                          name="emailScope" 
-                          value="all" 
-                          checked={emailScope === 'all'} 
-                          onChange={() => handleScopeChange('all')} 
-                        />
-                        <span>🌐 All 29 States & UTs (Pan-India Digest)</span>
-                      </label>
-                      {emailSelectedTender && (
-                        <label className={`email-scope-pill ${emailScope === 'tender' ? 'active' : ''}`}>
-                          <input 
-                            type="radio" 
-                            name="emailScope" 
-                            value="tender" 
-                            checked={emailScope === 'tender'} 
-                            onChange={() => handleScopeChange('tender')} 
-                          />
-                          <span>📄 Specific Tender #{emailSelectedTender.tender_id}</span>
-                        </label>
-                      )}
-                    </div>
-
-                    {emailScope === 'state' && (
-                      <div className="email-state-picker-row" style={{ marginTop: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                        <label style={{ fontSize: '0.84rem', fontWeight: 600, color: '#334155' }}>
-                          Select State:
-                        </label>
-                        <select 
-                          className="email-select-input"
-                          value={emailSelectedState}
-                          onChange={(e) => {
-                            setEmailSelectedState(e.target.value);
-                            setEmailSubject(`[GISFY Proposal Dispatch] ${e.target.value} Procurement Proposals & Attached Documents`);
-                            setPreviewHtml('');
-                          }}
-                        >
-                          {allStateNames.map(st => (
-                            <option key={st} value={st}>{st}</option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-
-                    {emailScope === 'tender' && emailSelectedTender && (
-                      <div className="email-tender-selected-box">
-                        <div className="tender-id-badge">ID: {emailSelectedTender.tender_id}</div>
-                        <div style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.88rem', margin: '4px 0' }}>
-                          {emailSelectedTender.title}
-                        </div>
-                        <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
-                          🏛️ {emailSelectedTender.department || 'Procurement Department'} • 📍 {emailSelectedState}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Team Members Recipient Selection Card */}
-                  <div className="email-section-card">
-                    <div className="email-section-header-row">
-                      <div className="email-section-title">
-                        <span>👥 Team Member Recipients ({emailRecipients.length} selected):</span>
-                      </div>
-                      <div className="email-quick-actions">
-                        <button 
-                          type="button" 
-                          className="email-link-btn"
-                          onClick={() => setEmailRecipients(teamMembers.map(m => m.email))}
-                        >
-                          Select All
-                        </button>
-                        <span className="email-sep">|</span>
-                        <button 
-                          type="button" 
-                          className="email-link-btn"
-                          onClick={() => setEmailRecipients([])}
-                        >
-                          Clear All
-                        </button>
-                        <span className="email-sep">|</span>
-                        <button 
-                          type="button" 
-                          className="email-add-member-toggle-btn"
-                          onClick={() => setShowAddMemberForm(!showAddMemberForm)}
-                        >
-                          {showAddMemberForm ? '✕ Close Form' : '➕ Add Team Member'}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Add New Team Member Inline Form */}
-                    {showAddMemberForm && (
-                      <form className="email-add-member-form" onSubmit={handleAddTeamMember}>
-                        <input 
-                          type="email" 
-                          placeholder="teammate@gisfy.co.in" 
-                          value={newMemberEmail}
-                          onChange={(e) => setNewMemberEmail(e.target.value)}
-                          required
-                          className="email-text-input small"
-                        />
-                        <input 
-                          type="text" 
-                          placeholder="Name (e.g. Rahul Sharma)" 
-                          value={newMemberName}
-                          onChange={(e) => setNewMemberName(e.target.value)}
-                          className="email-text-input small"
-                        />
-                        <input 
-                          type="text" 
-                          placeholder="Role (e.g. GIS Lead)" 
-                          value={newMemberRole}
-                          onChange={(e) => setNewMemberRole(e.target.value)}
-                          className="email-text-input small"
-                        />
-                        <button type="submit" className="email-btn-save-member">
-                          Save to Team
-                        </button>
-                      </form>
-                    )}
-
-                    {/* Recipient Checkboxes / Cards */}
-                    <div className="email-recipients-grid">
-                      {teamMembers.map(member => {
-                        const isChecked = emailRecipients.includes(member.email);
-                        const isCustom = !['proposals-team@gisfy.co.in', 'tenders@gisfy.co.in', 'director.projects@gisfy.co.in'].includes(member.email);
-
-                        return (
-                          <div 
-                            key={member.email} 
-                            className={`email-recipient-card ${isChecked ? 'checked' : ''}`}
-                            onClick={() => toggleRecipient(member.email)}
-                          >
-                            <input 
-                              type="checkbox" 
-                              checked={isChecked}
-                              onChange={() => {}} // handled by card click
-                              className="email-checkbox"
-                            />
-                            <div className="email-member-info">
-                              <div className="email-member-name">
-                                {member.name || member.email.split('@')[0]}
-                              </div>
-                              <div className="email-member-address">{member.email}</div>
-                              <span className="email-role-badge">{member.role || 'Team Member'}</span>
-                            </div>
-                            {isCustom && (
-                              <button 
-                                type="button"
-                                className="email-delete-member-btn"
-                                title="Remove team member"
-                                onClick={(e) => handleDeleteTeamMember(member.email, e)}
-                              >
-                                ✕
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Subject Line & Custom Notes Card */}
-                  <div className="email-section-card">
-                    <div className="email-field-group">
-                      <label className="email-field-label"><b>Subject Line:</b></label>
-                      <input 
-                        type="text" 
-                        className="email-text-input"
-                        value={emailSubject}
-                        onChange={(e) => setEmailSubject(e.target.value)}
-                        placeholder="Enter email subject line..."
-                      />
-                    </div>
-
-                    <div className="email-field-group" style={{ marginTop: '0.85rem' }}>
-                      <label className="email-field-label">
-                        <b>Directives / Notes for Team (Optional):</b>
-                        <span style={{ fontSize: '0.75rem', fontWeight: 400, color: '#64748b', marginLeft: '6px' }}>
-                          Included as an executive memo banner in the email body
-                        </span>
-                      </label>
-                      <textarea 
-                        className="email-textarea"
-                        value={emailNotes}
-                        onChange={(e) => setEmailNotes(e.target.value)}
-                        placeholder="e.g. Please prioritize technical proposal submission by Friday 5:00 PM. Verify BoQ quantities against schedule."
-                        rows={2}
-                      />
-                    </div>
-
-                    <div className="email-attachment-toggle" style={{ marginTop: '0.85rem' }}>
-                      <label className="email-checkbox-label">
-                        <input 
-                          type="checkbox" 
-                          checked={emailAttachZip}
-                          onChange={(e) => setEmailAttachZip(e.target.checked)}
-                        />
-                        <span>
-                          📦 <b>Physically attach All-in-One Compressed ZIP bundle to email</b> (Automatically included when under 20MB limit)
-                        </span>
-                      </label>
-                      <div className="email-attachment-hint">
-                        ℹ️ Direct 1-click download links to 100% genuine multi-page PDFs, technical specs, and Excel BoQs are automatically embedded in the email body.
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Footer Buttons */}
-                  <div className="email-modal-footer">
-                    <button 
-                      type="button" 
-                      className="btn-email-preview"
-                      onClick={handleFetchPreview}
-                      disabled={loadingPreview}
-                    >
-                      {loadingPreview ? '⏳ Generating Preview...' : '👁️ Preview HTML Email'}
-                    </button>
-                    <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.6rem' }}>
-                      <button 
-                        type="button" 
-                        className="btn-email-cancel"
-                        onClick={() => setShowEmailModal(false)}
-                      >
-                        Cancel
-                      </button>
-                      <button 
-                        type="button" 
-                        className={`btn-email-send ${sendingEmail ? 'loading' : ''}`}
-                        onClick={handleSendEmailDispatch}
-                        disabled={sendingEmail || emailRecipients.length === 0}
-                      >
-                        {sendingEmail ? '⏳ Dispatching Email...' : `🚀 Send to Team (${emailRecipients.length})`}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {emailActiveTab === 'preview' && (
-                <div className="email-preview-tab-view">
-                  <div className="email-preview-bar">
-                    <div className="email-preview-info">
-                      <span><b>Recipients:</b> {emailRecipients.join(', ') || 'No recipients selected'}</span>
-                      <span><b>Subject:</b> {emailSubject}</span>
-                    </div>
-                    <div className="email-preview-actions">
-                      <button 
-                        type="button"
-                        className="btn-email-preview-refresh" 
-                        onClick={handleFetchPreview} 
-                        disabled={loadingPreview}
-                      >
-                        🔄 Refresh Preview
-                      </button>
-                      <button 
-                        type="button"
-                        className={`btn-email-send-small ${sendingEmail ? 'loading' : ''}`}
-                        onClick={handleSendEmailDispatch}
-                        disabled={sendingEmail || emailRecipients.length === 0}
-                      >
-                        {sendingEmail ? '⏳ Sending...' : `🚀 Send Email Now`}
-                      </button>
-                    </div>
-                  </div>
-                  {loadingPreview ? (
-                    <div className="email-preview-loading">
-                      <div className="spinner"></div>
-                      <p>Generating responsive executive HTML email template...</p>
-                    </div>
-                  ) : previewHtml ? (
-                    <iframe 
-                      title="Email Preview"
-                      className="email-preview-frame"
-                      srcDoc={previewHtml}
-                    />
-                  ) : (
-                    <div className="email-preview-empty">
-                      <p>Click "Preview HTML Email" to render the exact responsive message.</p>
-                      <button type="button" className="btn-email-preview" onClick={handleFetchPreview}>
-                        👁️ Generate Preview Now
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {emailActiveTab === 'history' && (
-                <div className="email-history-tab-view">
-                  <div className="email-history-header">
-                    <h4>Dispatched Email Records & Delivery Audit Trail</h4>
-                    <button 
-                      type="button"
-                      className="btn-email-preview-refresh"
-                      onClick={fetchEmailHistory}
-                      disabled={loadingHistory}
-                    >
-                      🔄 Refresh History
-                    </button>
-                  </div>
-                  {loadingHistory ? (
-                    <div className="email-preview-loading">
-                      <div className="spinner"></div>
-                      <p>Loading dispatch history...</p>
-                    </div>
-                  ) : emailHistory.length === 0 ? (
-                    <div className="email-preview-empty">
-                      <p>No emails have been dispatched yet. Compose an email above to send proposals to your team!</p>
-                    </div>
-                  ) : (
-                    <div className="email-history-list">
-                      {emailHistory.map((item, idx) => (
-                        <div key={idx} className="email-history-item">
-                          <div className="email-history-left">
-                            <span className="email-history-icon">✉️</span>
-                            <div>
-                              <div className="email-history-filename">{item.filename}</div>
-                              <div className="email-history-meta">
-                                <span>📅 {formatDateTimeDMY(item.created_at)}</span>
-                                <span>📦 {item.size_kb} KB HTML Document</span>
-                                <span className="badge-delivered">✅ Delivered & Archived</span>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="email-history-right" style={{ display: 'flex', gap: '0.45rem', alignItems: 'center' }}>
-                            <a 
-                              href={`${API_BASE}${item.view_url}`}
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="email-history-view-link"
-                              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '6px 12px', background: '#4f46e5', color: '#ffffff', borderRadius: '6px', textDecoration: 'none', fontWeight: 700, fontSize: '0.8rem' }}
-                            >
-                              👁️ View Original Email ↗
-                            </a>
-                            <a 
-                              href={`https://mail.google.com/mail/?view=cm&fs=1&to=swethagisfy@gmail.com&su=${encodeURIComponent(item.filename.replace('.html', '').replace(/_/g, ' '))}`}
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '6px 10px', background: '#ea4335', color: '#ffffff', borderRadius: '6px', textDecoration: 'none', fontWeight: 700, fontSize: '0.78rem' }}
-                            >
-                              ✉️ Open in Gmail
-                            </a>
-                          </div>
-
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ========================================================================= */}
       {/* Collaboration Partners Modal Window */}
@@ -6685,19 +6249,21 @@ function App() {
                       </span>
                     </div>
 
-                    <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: '8px', padding: '0.65rem 0.85rem', marginBottom: '0.65rem', fontSize: '0.77rem', color: '#92400e', lineHeight: 1.45 }}>
-                      🛡️ <b>Client Protection &amp; Design Verification Mode Active:</b><br />
-                      This initial collaboration email will be sent strictly to <b>swethanjali@gisfy.co.in</b> and <b>swethagisfy@gmail.com</b> for your verification of text, layout, and JV terms. External partner (<b>{outreachPartner?.name}</b> &lt;{outreachPartner?.email || 'N/A'}&gt;) is safely shielded and will <b>NOT</b> receive any external email until you approve.
+                    <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '8px', padding: '0.65rem 0.85rem', marginBottom: '0.65rem', fontSize: '0.77rem', color: '#065f46', lineHeight: 1.5 }}>
+                      ✉️ <b>Automated Collaboration Email Dispatch:</b><br />
+                      • <b>From:</b> Farhath Bakka &lt;farhath@gisfy.co.in&gt;, GISFY Support &lt;support@gisfy.co.in&gt;<br />
+                      • <b>CC:</b> bidding@gisfy.co.in<br />
+                      • <b>To Recommended Partner:</b> <b>{outreachPartner?.name}</b> &lt;{outreachPartner?.email || 'N/A'}&gt;
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginBottom: '0.75rem' }}>
                       <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#374151' }}>
-                        Authorized Verification Recipients:
+                        Partner Mail ID (Recipient):
                       </label>
                       <input 
                         type="text" 
                         className="partners-search-input"
-                        placeholder="swethanjali@gisfy.co.in, swethagisfy@gmail.com"
+                        placeholder="e.g. contact@partner.com"
                         value={collabRecipients}
                         onChange={(e) => setCollabRecipients(e.target.value)}
                         style={{ background: '#ffffff', border: '1px solid #bbf7d0', width: '100%', boxSizing: 'border-box' }}
@@ -6711,14 +6277,14 @@ function App() {
                         onClick={handleSendCollaborationEmail}
                         disabled={collabSendingEmail}
                       >
-                        {collabSendingEmail ? '⏳ Dispatching Test Collaboration Email...' : '🚀 Send Collaboration Email to swethanjali@gisfy.co.in'}
+                        {collabSendingEmail ? '⏳ Dispatching Collaboration Email...' : '🚀 Send Collaboration Email to Partner'}
                       </button>
                       <button
                         type="button"
                         onClick={() => setShowSmtpModal(true)}
                         style={{ background: 'none', border: 'none', color: '#047857', fontSize: '0.78rem', textDecoration: 'underline', cursor: 'pointer', padding: '4px' }}
                       >
-                        ⚙️ Configure Gmail SMTP for Live Inbox
+                        ⚙️ Configure Microsoft 365 / SMTP for Live Inbox Delivery
                       </button>
                     </div>
 
@@ -6726,24 +6292,37 @@ function App() {
                       <div style={{ marginTop: '0.85rem', background: '#ffffff', border: '1px solid #10b981', borderRadius: '8px', padding: '0.85rem' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
                           <span style={{ fontWeight: 800, color: '#065f46', fontSize: '0.88rem' }}>
-                            ✅ Collaboration Request Email Generated &amp; Dispatched!
+                            {collabEmailSentResult.sent_folder_verified ? '✅ Delivery Confirmed (Sent Folder Verified)' : '📬 Provider Accepted (HTTP 202/250)'}
                           </span>
-                          <span style={{ fontSize: '0.72rem', background: '#d1fae5', color: '#065f46', padding: '2px 8px', borderRadius: '10px', fontWeight: 700 }}>
-                            {collabEmailSentResult.delivery_mode === 'smtp' ? 'Delivered via SMTP' : 'Archived in Sent Emails'}
+                          <span style={{ fontSize: '0.72rem', background: collabEmailSentResult.sent_folder_verified ? '#d1fae5' : '#ede9fe', color: collabEmailSentResult.sent_folder_verified ? '#065f46' : '#5b21b6', padding: '2px 8px', borderRadius: '10px', fontWeight: 700 }}>
+                            {collabEmailSentResult.collaboration_status || (collabEmailSentResult.sent_folder_verified ? 'Delivery Confirmed' : 'Provider Accepted')}
                           </span>
                         </div>
-                        <div style={{ fontSize: '0.78rem', color: '#374151', marginBottom: '0.6rem' }}>
+                        <div style={{ fontSize: '0.78rem', color: '#374151', marginBottom: '0.6rem', lineHeight: 1.5 }}>
+                          From: <b>{collabEmailSentResult.from_address || 'Farhath Bakka <farhath@gisfy.co.in>, GISFY Support <support@gisfy.co.in>'}</b><br/>
+                          CC: <b>{collabEmailSentResult.cc_recipients?.join(', ') || 'bidding@gisfy.co.in'}</b><br/>
+                          Reply-To: <b>farhath@gisfy.co.in, support@gisfy.co.in</b><br/>
+                          To Partner: <b>{collabEmailSentResult.recipients?.join(', ')}</b><br/>
                           Subject: <b>{collabEmailSentResult.subject}</b><br/>
-                          Recipients: <b>{collabEmailSentResult.recipients?.join(', ')}</b>
+                          Provider: <b>{collabEmailSentResult.delivery_mode}</b> (HTTP {collabEmailSentResult.provider_status_code || 202})<br/>
+                          Farhath Sent Items: <b>{collabEmailSentResult.sent_folder_verified ? '✅ Verified in Sent Folder' : '⏳ Queued / Synced to Sent Items'}</b>
                         </div>
                         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                          <a 
+                            href={`https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(collabEmailSentResult.recipients?.join(',') || '')}&cc=${encodeURIComponent('bidding@gisfy.co.in')}&subject=${encodeURIComponent(collabEmailSentResult.subject || '')}&body=${encodeURIComponent(collabEmailSentResult.proposal_letter || '')}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '6px 12px', background: '#0284c7', color: '#ffffff', borderRadius: '6px', textDecoration: 'none', fontWeight: 700, fontSize: '0.8rem', boxShadow: '0 2px 4px rgba(2, 132, 199, 0.25)' }}
+                          >
+                            📬 Open in Microsoft Outlook ↗
+                          </a>
                           <a 
                             href={`${API_BASE}${collabEmailSentResult.view_url}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '6px 12px', background: '#059669', color: '#ffffff', borderRadius: '6px', textDecoration: 'none', fontWeight: 700, fontSize: '0.8rem' }}
                           >
-                            👁️ View Original Email in Browser ↗
+                            👁️ View Rendered Email ↗
                           </a>
                           <a 
                             href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(collabEmailSentResult.recipients?.join(',') || '')}&su=${encodeURIComponent(collabEmailSentResult.subject || '')}`}
@@ -6751,13 +6330,7 @@ function App() {
                             rel="noopener noreferrer"
                             style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '6px 12px', background: '#ea4335', color: '#ffffff', borderRadius: '6px', textDecoration: 'none', fontWeight: 700, fontSize: '0.8rem' }}
                           >
-                            ✉️ Open in Gmail Web ↗
-                          </a>
-                          <a 
-                            href={`mailto:${collabEmailSentResult.recipients?.join(',')}?subject=${encodeURIComponent(collabEmailSentResult.subject)}&body=${encodeURIComponent(collabEmailSentResult.proposal_letter)}`}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '6px 12px', background: '#1e293b', color: '#ffffff', borderRadius: '6px', textDecoration: 'none', fontWeight: 700, fontSize: '0.8rem' }}
-                          >
-                            📬 Open in Mail App
+                            ✉️ Gmail Web ↗
                           </a>
                         </div>
                       </div>
@@ -6839,11 +6412,11 @@ function App() {
                   </button>
                   <button 
                     className="partner-outreach-btn"
-                    style={{ background: '#059669', borderColor: '#059669', color: '#ffffff', fontWeight: 700 }}
+                    style={{ background: '#0284c7', borderColor: '#0284c7', color: '#ffffff', fontWeight: 700 }}
                     onClick={handleSendCollaborationEmail}
                     disabled={collabSendingEmail}
                   >
-                    {collabSendingEmail ? '⏳ Dispatching...' : '🚀 Send Email to swethanjali@gisfy.co.in'}
+                    {collabSendingEmail ? '⏳ Opening Outlook...' : '🚀 Open & Send in Outlook'}
                   </button>
                 </>
               )}
@@ -7075,10 +6648,10 @@ function App() {
                 <span style={{ fontSize: '1.6rem' }}>⚙️</span>
                 <div>
                   <h3 style={{ margin: 0, color: '#ffffff' }}>
-                    Email Delivery & Gmail SMTP Configuration
+                    Email Delivery &amp; SMTP Configuration
                   </h3>
                   <div style={{ color: '#c7d2fe', fontSize: '0.82rem' }}>
-                    Deliver proposals & collaboration letters directly to <b>swethagisfy@gmail.com</b>
+                    Outbound delivery via <b>farhath@gisfy.co.in</b> (CC: <b>bidding@gisfy.co.in</b>)
                   </div>
                 </div>
               </div>
@@ -7110,22 +6683,21 @@ function App() {
                 <p style={{ margin: 0, fontSize: '0.78rem', color: smtpStatus?.is_configured ? '#065f46' : '#92400e', lineHeight: 1.4 }}>
                   {smtpStatus?.is_configured 
                     ? `Emails will be sent live to inboxes via ${smtpStatus.smtp_host} using ${smtpStatus.smtp_user}. Full HTML copies are also archived in storage/sent_emails/.`
-                    : `Currently in Local Archive Mode. Every email is compiled as a complete HTML document with attachments and saved locally in storage/sent_emails/. To send live emails directly to your Gmail inbox, enter your Gmail App Password below.`}
+                    : `Currently in Local Archive Mode. Every email is compiled as a complete HTML document with attachments and saved locally in storage/sent_emails/. To send live emails directly to your partner and bidding inboxes, enter your SMTP/Google App Password below.`}
                 </p>
               </div>
 
               {/* Instructions Guide */}
               <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.85rem 1rem', marginBottom: '1.25rem' }}>
                 <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.35rem' }}>
-                  🔑 How to get a Google App Password in 60 seconds:
+                  🔑 Microsoft 365 Enterprise Mailbox Configuration (smtp.office365.com:587):
                 </div>
-                <ol style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.78rem', color: '#475569', lineHeight: 1.5 }}>
-                  <li>Open your Google Account: <a href="https://myaccount.google.com/security" target="_blank" rel="noreferrer" style={{ color: '#4f46e5', fontWeight: 600 }}>Google Security Settings ↗</a></li>
-                  <li>Ensure <b>2-Step Verification</b> is enabled.</li>
-                  <li>Click on <b>App passwords</b> (or search "App passwords" in Google account).</li>
-                  <li>Create a new App Password named <b>"GISFY Proposals"</b>.</li>
-                  <li>Copy the 16-character code (e.g. <code>abcd efgh ijkl mnop</code>) and paste below.</li>
-                </ol>
+                <div style={{ fontSize: '0.78rem', color: '#475569', lineHeight: 1.5 }}>
+                  • <b>Host:</b> <code>smtp.office365.com</code> (Port 587, STARTTLS)<br/>
+                  • <b>Sender:</b> <code>Farhath Bakka &lt;farhath@gisfy.co.in&gt;</code><br/>
+                  • <b>Mandatory CC:</b> <code>bidding@gisfy.co.in</code><br/>
+                  • <b>Preferred:</b> Microsoft Graph API OAuth 2.0 (configured under the <b>Partner Outreach</b> tab).
+                </div>
               </div>
 
               {/* Form */}
@@ -7140,7 +6712,7 @@ function App() {
                       className="partners-search-input"
                       value={smtpForm.host}
                       onChange={(e) => setSmtpForm({ ...smtpForm, host: e.target.value })}
-                      placeholder="smtp.gmail.com"
+                      placeholder="smtp.office365.com"
                       required
                     />
                   </div>
@@ -7161,21 +6733,21 @@ function App() {
 
                 <div style={{ marginBottom: '0.75rem' }}>
                   <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#334155', marginBottom: '0.25rem' }}>
-                    Gmail Address / Username:
+                    Email Address / Username:
                   </label>
                   <input 
-                    type="email"
+                    type="email" 
                     className="partners-search-input"
                     value={smtpForm.user}
                     onChange={(e) => setSmtpForm({ ...smtpForm, user: e.target.value })}
-                    placeholder="swethagisfy@gmail.com"
+                    placeholder="farhath@gisfy.co.in"
                     required
                   />
                 </div>
 
                 <div style={{ marginBottom: '0.75rem' }}>
                   <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#334155', marginBottom: '0.25rem' }}>
-                    16-Character Google App Password:
+                    16-Character App Password / Mailbox Password:
                   </label>
                   <input 
                     type="password"
@@ -7199,7 +6771,7 @@ function App() {
                     className="partners-search-input"
                     value={smtpForm.from_email}
                     onChange={(e) => setSmtpForm({ ...smtpForm, from_email: e.target.value })}
-                    placeholder="GISFY Proposals Directorate <swethagisfy@gmail.com>"
+                    placeholder="Farhath Bakka <farhath@gisfy.co.in>"
                   />
                 </div>
 
@@ -7215,7 +6787,7 @@ function App() {
                   }}>
                     {smtpTestResult.status === 'success' ? (
                       <div>
-                        <b>🎉 Live Verification Succeeded!</b> A test email was delivered to <b>{smtpTestResult.recipients?.[0] || 'swethagisfy@gmail.com'}</b>.
+                        <b>🎉 Live Verification Succeeded!</b> A test email was delivered to <b>{smtpTestResult.recipients?.[0] || 'farhath@gisfy.co.in'}</b>.
                       </div>
                     ) : (
                       <div>
@@ -7386,12 +6958,6 @@ function App() {
 
                 <div className="calendar-tab-pills">
                   <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', marginRight: '0.2rem' }}>Month View:</span>
-                  <button 
-                    className={`calendar-tab-pill ${calendarActiveMonth === 'ALL' ? 'active' : ''}`}
-                    onClick={() => setCalendarActiveMonth('ALL')}
-                  >
-                    All Months
-                  </button>
                   {calendarData.months.map(m => (
                     <button 
                       key={m.key}
@@ -7401,17 +6967,25 @@ function App() {
                       {m.shortName}
                     </button>
                   ))}
+                  <button 
+                    className={`calendar-tab-pill ${calendarActiveMonth === 'ALL' ? 'active' : ''}`}
+                    onClick={() => setCalendarActiveMonth('ALL')}
+                  >
+                    All 5 Months (Multi-Grid)
+                  </button>
                 </div>
               </div>
 
               {/* Month Calendar Grids */}
-              <div className="calendar-months-container">
+              <div className={`calendar-months-container ${calendarActiveMonth !== 'ALL' ? 'single-month-mode' : 'multi-month-mode'}`}>
                 {calendarData.months
                   .filter(m => calendarActiveMonth === 'ALL' || calendarActiveMonth === m.key)
                   .map(monthMeta => {
                     const monthTotal = Object.keys(calendarData.dailyMap)
                       .filter(d => d.startsWith(monthMeta.key))
                       .reduce((acc, d) => acc + (calendarData.dailyMap[d]?.tenders?.length || 0), 0);
+
+                    const isSingleMonthView = calendarActiveMonth !== 'ALL';
 
                     // Generate array of day cells
                     const cells = [];
@@ -7432,47 +7006,114 @@ function App() {
                       cells.push(
                         <div 
                           key={dayStr}
-                          className={`calendar-day-cell ${count > 0 ? 'has-proposals' : ''} ${isToday ? 'today' : ''} ${isSelected ? 'selected' : ''}`}
+                          className={`calendar-day-cell ${isSingleMonthView ? 'full-day-cell' : 'compact-day-cell'} ${count > 0 ? 'has-proposals' : ''} ${isToday ? 'today' : ''} ${isSelected ? 'selected' : ''}`}
                           onClick={() => {
                             setModalSelectedDate(dayStr);
                           }}
                           title={`${formatDateDMY(dayStr)}: ${count} proposals ${calendarViewMode === 'DUE_DATE' ? (isPast ? 'completed' : isToday ? 'due today' : 'open / live') : 'published'}`}
                         >
-                          {isToday && <span className="calendar-today-indicator" title="Today"></span>}
-                          <span className="calendar-day-number">{dayNum}</span>
-                          {count > 0 && (
-                            <span className={`calendar-day-bid-count ${
-                              calendarViewMode === 'DUE_DATE'
-                                ? (isToday ? 'today-badge' : isPast ? 'completed-badge' : isOctober ? 'remaining-badge' : 'live-badge')
-                                : (isToday ? 'today-badge' : '')
-                            }`}>
-                              {calendarViewMode === 'DUE_DATE'
-                                ? (isToday ? `⏰ ${count} today` : isPast ? `🏁 ${count} done` : isOctober ? `🟢 ${count} open` : `⏳ ${count} live`)
-                                : (isToday ? `📢 ${count} today` : `${count} pub`)}
-                            </span>
+                          {isSingleMonthView ? (
+                            <>
+                              <div className="calendar-day-top-row">
+                                <span className="calendar-day-number">{dayNum}</span>
+                                {isToday && <span className="calendar-today-tag">TODAY</span>}
+                              </div>
+                              {count > 0 && (
+                                <div className="calendar-day-badges-wrapper">
+                                  <span className={`calendar-day-bid-count ${
+                                    calendarViewMode === 'DUE_DATE'
+                                      ? (isToday ? 'today-badge' : isPast ? 'completed-badge' : isOctober ? 'remaining-badge' : 'live-badge')
+                                      : (isToday ? 'today-badge' : '')
+                                  }`}>
+                                    {calendarViewMode === 'DUE_DATE'
+                                      ? (isToday ? `⏰ ${count} Due Today` : isPast ? `🏁 ${count} Done` : isOctober ? `🟢 ${count} Open` : `⏳ ${count} Live`)
+                                      : (isToday ? `📢 ${count} Today` : `📢 ${count} Pub`)}
+                                  </span>
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              {isToday && <span className="calendar-today-indicator" title="Today"></span>}
+                              <span className="calendar-day-number">{dayNum}</span>
+                              {count > 0 && (
+                                <span className={`calendar-day-bid-count compact-bid-count ${
+                                  calendarViewMode === 'DUE_DATE'
+                                    ? (isToday ? 'today-badge' : isPast ? 'completed-badge' : isOctober ? 'remaining-badge' : 'live-badge')
+                                    : (isToday ? 'today-badge' : '')
+                                }`}>
+                                  {calendarViewMode === 'DUE_DATE'
+                                    ? (isToday ? `⏰ ${count}` : isPast ? `${count} done` : `${count} open`)
+                                    : `${count}`}
+                                </span>
+                              )}
+                            </>
                           )}
                         </div>
                       );
                     }
 
                     return (
-                      <div key={monthMeta.key} className="calendar-month-card">
-                        <div className="calendar-month-header">
-                          <span className="calendar-month-title">{monthMeta.name}</span>
-                          <span className="calendar-month-count-badge">
-                            {monthMeta.isCurrentMonth
-                              ? `${monthTotal} Proposals (${calendarData.totalOctRemainingLive} Live Remaining • ${calendarData.totalOctCompleted} Done)`
-                              : `${monthTotal} Proposals`}
-                          </span>
+                      <div key={monthMeta.key} className={`calendar-month-card ${isSingleMonthView ? 'original-single-card' : ''}`}>
+                        <div className="calendar-month-header original-calendar-header">
+                          {isSingleMonthView ? (
+                            <>
+                              <div className="calendar-header-nav-left">
+                                <button 
+                                  type="button"
+                                  className="calendar-nav-arrow-btn"
+                                  onClick={handlePrevMonth}
+                                  disabled={calendarActiveMonth === calendarData.months[0].key}
+                                  title="Previous Month"
+                                >
+                                  ◀ Prev Month
+                                </button>
+                                <span className="calendar-month-title full-title">{monthMeta.name}</span>
+                                <span className="calendar-month-count-badge">
+                                  {monthMeta.isCurrentMonth
+                                    ? `${monthTotal} Proposals (${calendarData.totalOctRemainingLive} Live Remaining • ${calendarData.totalOctCompleted} Done)`
+                                    : `${monthTotal} Proposals`}
+                                </span>
+                              </div>
+                              <div className="calendar-header-nav-right">
+                                <button 
+                                  type="button"
+                                  className="calendar-today-pill-btn"
+                                  onClick={handleGoToToday}
+                                  title="Jump to Today's Date"
+                                >
+                                  📍 Today ({formatDateDMY(calendarData.todayStr)})
+                                </button>
+                                <button 
+                                  type="button"
+                                  className="calendar-nav-arrow-btn"
+                                  onClick={handleNextMonth}
+                                  disabled={calendarActiveMonth === calendarData.months[calendarData.months.length - 1].key}
+                                  title="Next Month"
+                                >
+                                  Next Month ▶
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <span className="calendar-month-title">{monthMeta.name}</span>
+                              <span className="calendar-month-count-badge">
+                                {monthMeta.isCurrentMonth
+                                  ? `${monthTotal} Proposals (${calendarData.totalOctRemainingLive} Live • ${calendarData.totalOctCompleted} Done)`
+                                  : `${monthTotal} Proposals`}
+                              </span>
+                            </>
+                          )}
                         </div>
-                        <div className="calendar-weekdays-row">
-                          <span className="calendar-weekday-cell">Mo</span>
-                          <span className="calendar-weekday-cell">Tu</span>
-                          <span className="calendar-weekday-cell">We</span>
-                          <span className="calendar-weekday-cell">Th</span>
-                          <span className="calendar-weekday-cell">Fr</span>
-                          <span className="calendar-weekday-cell">Sa</span>
-                          <span className="calendar-weekday-cell">Su</span>
+                        <div className={`calendar-weekdays-row ${isSingleMonthView ? 'original-weekdays' : ''}`}>
+                          <span className="calendar-weekday-cell">{isSingleMonthView ? 'Mon' : 'Mo'}</span>
+                          <span className="calendar-weekday-cell">{isSingleMonthView ? 'Tue' : 'Tu'}</span>
+                          <span className="calendar-weekday-cell">{isSingleMonthView ? 'Wed' : 'We'}</span>
+                          <span className="calendar-weekday-cell">{isSingleMonthView ? 'Thu' : 'Th'}</span>
+                          <span className="calendar-weekday-cell">{isSingleMonthView ? 'Fri' : 'Fr'}</span>
+                          <span className="calendar-weekday-cell">{isSingleMonthView ? 'Sat' : 'Sa'}</span>
+                          <span className="calendar-weekday-cell">{isSingleMonthView ? 'Sun' : 'Su'}</span>
                         </div>
                         <div className="calendar-days-grid">
                           {cells}

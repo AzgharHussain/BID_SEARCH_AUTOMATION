@@ -1,0 +1,75 @@
+
+
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<link href="views/themes/currenttheme/style_new.css" rel="stylesheet"
+	type="text/css" />
+<script type="text/javascript">
+	function sessionFrom() {
+		document.sessionPageFrm.action = "login.html";
+		document.sessionPageFrm.method = "POST";
+		document.sessionPageFrm.submit();
+	}
+</script>
+</head>
+<body>
+	<!-- <center> -->
+	<form id="sessionPageFrm" name="sessionPageFrm" action="null" method="post">
+		
+
+		<div class="errorPage">
+
+			<table>
+				<tr>
+					<td width="55%">
+					
+					<!-- <img style="border: none"
+						src="views/themes/currenttheme/images/Oops!-Something-went-wrong.jpg"
+						width="100%" /> -->
+					<img style="border: none"
+						src="./resources/img/something-went-wrongt.jpg"
+						width="100%" />
+							
+						</td>
+					<td width="45%" valign="top">
+						<p>I Think you have turned the wrong way. Lets go back.</p>
+						<div class="PageTitle">APPLICATION SECURITY ERROR!!!</div>
+						<p>This error has occurred for one of the following reasons:</p>
+						<p class="errorTxt">1) You have used Back/Forward/Refresh Button of your
+							browser</p>
+						<p class="errorTxt">2) You have kept browser window idle for a long time</p>
+						<p class="errorTxt">3) Any Unauthorized access</p>
+					</td>
+				</tr>
+
+				<tr>
+					<td colspan="2" class="tCenter"><div class="spanTextRed"></div></td>
+				</tr>
+
+				<tr>
+					<td colspan="2" class="tCenter" style="text-align: center;">
+						<div class="errorResult tColor" style="text-align: center;">
+							<br> click here to <a href="#" class="errorResult" onclick="sessionFrom()"> 
+								<!-- login --> <img style="border: none" src="./resources/img/icon-homePageTS.png" />
+							</a>
+						</div>
+					</td>
+				</tr>
+
+				
+			</table>
+
+		</div>
+
+
+	<div>
+<input type="hidden" name="CSRFToken" value="9c4a1180-d9ae-4e37-8a47-b3ba75bd2a9a" />
+<input type="hidden" name="hdnEncryptNames" value="hdnEncryptNames" />
+<input type="hidden" name="hdnEncryptValues" value="hdnEncryptValues" />
+</div></form>
+	<!-- </center> -->
+</body>
+</html>

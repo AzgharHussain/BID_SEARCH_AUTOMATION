@@ -149,9 +149,27 @@ def send_partner_outreach_email_endpoint(
 ):
     """Dispatch official Collaboration LOI email to team and partner with HTML archiving."""
     try:
-        return partner_service.send_collaboration_outreach_email(db, payload)
+        res = partner_service.send_collaboration_outreach_email(db, payload)
+        if res.get("status") == "failed" or not res.get("provider_accepted"):
+            raise HTTPException(
+                status_code=400,
+                detail=res.get("error") or res.get("message") or "Email provider rejected send or is not authenticated."
+            )
+        return res
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to dispatch collaboration email: {e}")
+
+
+@router.post("/auto-dispatch/{tender_id}")
+def auto_dispatch_collaboration_email_endpoint(tender_id: int, db: Session = Depends(get_db)):
+    """Automatically match top partner and dispatch collaboration Letter of Intent email."""
+    res = partner_service.auto_dispatch_collaboration_email_for_tender(db, tender_id=tender_id)
+    if not res:
+        raise HTTPException(status_code=404, detail="No matching collaboration partner found for this tender.")
+    return res
+
 
