@@ -48,3 +48,5 @@ backend/.email_credentials/
 *.env
 *.bak*
 scratch_*.py
+storage/
+

@@ -485,8 +485,9 @@ class AdbCmsConnector:
         """Discover and download authentic attachments while on Profile tab, or compile official CSRN TOR notice document."""
         downloaded_docs = []
 
-        country_dir = sanitize_filename(detail_data.get("country", "Regional"))
-        pkg_dir = sanitize_filename(detail_data.get("package_number") or detail_data.get("tender_unique_id"))
+        country_dir = sanitize_filename(detail_data.get("country", "Regional"), max_length=20)
+        raw_pkg = detail_data.get("package_number") or detail_data.get("tender_unique_id") or "PKG-01"
+        pkg_dir = sanitize_filename(raw_pkg, max_length=25)
         target_dir = STORAGE_ROOT / country_dir / pkg_dir
         target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -508,7 +509,8 @@ class AdbCmsConnector:
                     await link.click()
 
                 download = await download_info.value
-                suggested_filename = sanitize_filename(download.suggested_filename or f"{link_text}.pdf")
+                orig_fn = download.suggested_filename or f"{link_text}.pdf"
+                suggested_filename = sanitize_filename(orig_fn, max_length=45)
                 file_dest = target_dir / suggested_filename
 
                 await download.save_as(str(file_dest))
@@ -979,11 +981,13 @@ class AdbCmsConnector:
             tracker = tender.adb_tracker
 
             country = detail.country if detail and detail.country else "Regional"
-            pkg = detail.package_number if detail and detail.package_number else tender.tender_id
-            target_dir = STORAGE_ROOT / sanitize_filename(country) / sanitize_filename(pkg)
+            raw_pkg = detail.package_number if detail and detail.package_number else tender.tender_id
+            pkg_clean = sanitize_filename(raw_pkg, max_length=25)
+            country_clean = sanitize_filename(country, max_length=20)
+            target_dir = STORAGE_ROOT / country_clean / pkg_clean
             target_dir.mkdir(parents=True, exist_ok=True)
 
-            pdf_filename = f"ADB_{sanitize_filename(pkg)}_Official_EOI_Proposal_Dossier.pdf"
+            pdf_filename = f"ADB_{pkg_clean[:20]}_EOI_Proposal_Dossier.pdf"
             pdf_path = target_dir / pdf_filename
 
             doc = fitz.open()
