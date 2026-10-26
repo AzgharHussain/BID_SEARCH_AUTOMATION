@@ -85,7 +85,8 @@ function App() {
   const [syncStatus, setSyncStatus] = useState(null);
   const [syncingNow, setSyncingNow] = useState(false);
   const [showGisfyModal, setShowGisfyModal] = useState(false);
-  const [floatingExpanded, setFloatingExpanded] = useState(true);
+  const [floatingExpanded, setFloatingExpanded] = useState(false);
+  const floatingWidgetRef = useRef(null);
   const [toast, setToast] = useState(null);
   const terminalRef = useRef(null);
 
@@ -723,6 +724,16 @@ function App() {
       terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
     }
   }, [logs]);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (floatingExpanded && floatingWidgetRef.current && !floatingWidgetRef.current.contains(event.target)) {
+        setFloatingExpanded(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [floatingExpanded]);
 
 
 
@@ -7419,19 +7430,38 @@ Website: www.gisfy.co.in`;
         </div>
       )}
 
-      {/* Floating GISFY Brand Widget - Matches User Reference Design Exactly (Image 1 & Image 2) */}
-
-
+      {/* Floating GISFY Brand Widget - Click circle bubble to toggle horizontal message */}
       <div 
+        ref={floatingWidgetRef}
         className={`gisfy-floating-widget ${floatingExpanded ? 'expanded' : 'collapsed'}`}
-        onClick={() => setShowGisfyModal(true)}
-        title="Powered by GISFY - Click for details"
       >
-        <div className="gisfy-capsule-pill">
+        <div 
+          className="gisfy-capsule-pill"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowGisfyModal(true);
+          }}
+          title="Powered by GISFY - Click for details"
+        >
           <span className="gisfy-capsule-label">POWERED BY</span>
           <img src="/gisfy_logo.png" alt="GISFY" className="gisfy-capsule-logo" />
         </div>
-        <div className="gisfy-circle-button">
+        <div 
+          className="gisfy-circle-button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setFloatingExpanded(prev => !prev);
+          }}
+          title={floatingExpanded ? "Click to hide Powered by GISFY" : "Powered by GISFY - Click to show"}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setFloatingExpanded(prev => !prev);
+            }
+          }}
+        >
           <img src="/gisfy_logo.png" alt="GISFY" className="gisfy-circle-logo" />
         </div>
       </div>

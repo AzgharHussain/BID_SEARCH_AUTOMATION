@@ -3070,7 +3070,7 @@ body::after {
   transform: scale(1.08);
 }
 
-/* Floating widget collapse & expand transitions */
+/* Floating widget collapse & expand transitions - Click to toggle */
 .gisfy-floating-widget.collapsed .gisfy-capsule-pill {
   max-width: 0;
   padding: 0;
@@ -3078,15 +3078,25 @@ body::after {
   opacity: 0;
   border: none;
   pointer-events: none;
+  overflow: hidden;
+  visibility: hidden;
+  transform: translateX(18px) scale(0.92);
+  transform-origin: right center;
+  transition: max-width 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease, transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), padding 0.35s ease, margin 0.35s ease, border 0.35s ease;
 }
 
-.gisfy-floating-widget.expanded .gisfy-capsule-pill,
-.gisfy-floating-widget:hover .gisfy-capsule-pill {
-  max-width: 280px;
+.gisfy-floating-widget.expanded .gisfy-capsule-pill {
+  max-width: 320px;
   opacity: 1;
   padding: 0 24px 0 18px;
   margin-right: -18px;
   pointer-events: auto;
+  overflow: hidden;
+  visibility: visible;
+  border: 1.5px solid #e0e7ff;
+  transform: translateX(0) scale(1);
+  transform-origin: right center;
+  transition: max-width 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease, transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), padding 0.4s ease, margin 0.4s ease, border 0.4s ease;
 }
 
 /* Subtle breathing glow */

@@ -103,26 +103,9 @@ def parse_date_safely(date_str: str) -> Optional[datetime]:
     return None
 
 
-import unicodedata
-
-def sanitize_filename(name: str, max_length: int = 60) -> str:
-    """Remove unsafe characters, control characters, non-ASCII symbols, and truncate to safe publish length."""
-    if not name:
-        return "ADB_Document"
-    ext = ""
-    name_str = str(name).strip()
-    if "." in name_str:
-        parts = name_str.rsplit(".", 1)
-        if len(parts[1]) <= 5 and parts[1].isalnum():
-            name_str, ext = parts[0], "." + parts[1].lower()
-    clean = re.sub(r'[\x00-\x1f\x7f-\x9f]', '_', name_str)
-    clean = clean.replace('’', "'").replace('‘', "'").replace('“', '"').replace('”', '"')
-    clean = re.sub(r'[\\/*?:"<>|\'#%&{}\\<>*?/$!\'":@+`|=]', '_', clean)
-    clean_ascii = unicodedata.normalize('NFKD', clean).encode('ascii', 'ignore').decode('ascii').strip()
-    if not clean_ascii or len(clean_ascii.replace('_', '').strip()) < 3:
-        clean_ascii = "ADB_Attachment_Document"
-    clean_ascii = re.sub(r'[_\s]+', '_', clean_ascii).strip('_')
-    return clean_ascii[:max_length] + ext
+def sanitize_filename(name: str) -> str:
+    """Remove unsafe characters from filenames."""
+    return re.sub(r'[\\/*?:"<>|]', "_", name).strip()
 
 
 class AdbCmsConnector:
