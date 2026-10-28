@@ -11,8 +11,20 @@ from typing import Optional, List, Dict, Any
 
 import pytz
 from bs4 import BeautifulSoup
-from playwright.async_api import async_playwright
-import pymupdf as fitz
+
+try:
+    from playwright.async_api import async_playwright
+except ImportError:
+    async_playwright = None
+
+try:
+    import pymupdf as fitz
+except ImportError:
+    try:
+        import fitz
+    except ImportError:
+        fitz = None
+
 from sqlalchemy.orm import Session
 
 from app.db.database import SessionLocal
@@ -171,6 +183,12 @@ class AdbCmsConnector:
             "errors": [],
             "processed_items": []
         }
+
+        if not async_playwright:
+            msg = "Playwright is not installed in this Python environment. To enable live ADB CMS headless sync, run: pip install playwright && playwright install"
+            logger.warning(msg)
+            summary["errors"].append(msg)
+            return summary
 
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)

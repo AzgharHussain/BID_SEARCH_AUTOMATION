@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
 from app.services.adb_cms_connector import adb_connector
 
 logger = logging.getLogger("adb_scheduler")
@@ -10,7 +10,7 @@ class AdbSchedulerService:
     """Manages scheduled daily synchronization and discovery of ADB CMS consulting opportunities."""
 
     def __init__(self):
-        self.scheduler = AsyncIOScheduler()
+        self.scheduler = BackgroundScheduler()
         self.is_running = False
         self.last_run_time = None
         self.next_run_time = None
@@ -35,12 +35,12 @@ class AdbSchedulerService:
         except Exception as e:
             logger.error(f"Failed to start ADB scheduler: {e}")
 
-    async def _run_daily_sync(self):
+    def _run_daily_sync(self):
         """Execute scheduled synchronization."""
         logger.info("Executing scheduled daily ADB CMS opportunity synchronization...")
         self.last_run_time = datetime.utcnow()
         try:
-            result = await adb_connector.sync_opportunities(max_count=10, sync_type="scheduled")
+            result = asyncio.run(adb_connector.sync_opportunities(max_count=10, sync_type="scheduled"))
             logger.info(f"Scheduled ADB sync completed: {result.get('opportunities_added', 0)} added, {result.get('documents_downloaded', 0)} docs.")
         except Exception as e:
             logger.error(f"Scheduled ADB sync failed: {e}")

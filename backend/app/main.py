@@ -52,19 +52,39 @@ def update_tenders_lifecycle_status(db):
     db.commit()
 
 @app.on_event("startup")
-def startup_event():
-    # Ensure all tables (including collaboration_emails and workflow logs) are created
-    models.Base.metadata.create_all(bind=engine)
-    migrate_and_init_adb_db()
-    live_sync_manager.start_scheduler()
-    collaboration_scheduler.start_scheduler()
-    adb_scheduler.start_scheduler()
+async def startup_event():
+    # 1. Ensure all tables (including collaboration_emails and workflow logs) are created
+    try:
+        models.Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        print(f"⚠️ [Startup] Error creating tables: {e}")
+
+    try:
+        migrate_and_init_adb_db()
+    except Exception as e:
+        print(f"⚠️ [Startup] Error migrating ADB DB schema: {e}")
+
+    try:
+        live_sync_manager.start_scheduler()
+    except Exception as e:
+        print(f"⚠️ [Startup] Error starting live sync scheduler: {e}")
+
+    try:
+        collaboration_scheduler.start_scheduler()
+    except Exception as e:
+        print(f"⚠️ [Startup] Error starting collaboration scheduler: {e}")
+
+    try:
+        adb_scheduler.start_scheduler()
+    except Exception as e:
+        print(f"⚠️ [Startup] Error starting ADB scheduler: {e}")
+
     db = SessionLocal()
     try:
         ensure_partners_seeded(db)
         update_tenders_lifecycle_status(db)
     except Exception as e:
-        print(f"Error seeding partners or updating tender status: {e}")
+        print(f"⚠️ [Startup] Error seeding partners or updating tender status: {e}")
     finally:
         db.close()
 
@@ -664,4 +684,9 @@ def trigger_auto_download(background_tasks: BackgroundTasks, sync: bool = Query(
         "status": "started",
         "message": "Backend Automatic Downloader started in background. Monitor live progress in Agent Terminal."
     }
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
 
