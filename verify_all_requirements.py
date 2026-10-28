@@ -65,7 +65,7 @@ def verify_system():
     print(f"5. Collaboration Emails Coverage Check:")
     print(f"   Total Drafts in Database: {total_emails}")
     print(f"   States Covered: {len(states_covered)} (Expected: 30: 29 states + ADB) -> {'PASS' if len(states_covered) >= 29 else 'FAIL'}")
-    print(f"   Email Signature Sender: Farhath Bakka <farhath@gisfy.co.in>, GISFY Support <support@gisfy.co.in>")
+    print(f"   Email Signature Sender: GISFY Support <support@gisfy.co.in>")
     print(f"   Mandatory CC: bidding@gisfy.co.in")
 
     print("=" * 70)

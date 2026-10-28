@@ -139,6 +139,7 @@ class PartnerBase(BaseModel):
     empanelment_status: Optional[str] = None
     turnover: Optional[str] = None
     employee_count: Optional[str] = None
+    country: Optional[str] = None
     state: Optional[str] = None
     city: Optional[str] = None
     pan_india_presence: bool = True
@@ -151,6 +152,7 @@ class PartnerBase(BaseModel):
     synergy_roles: Optional[str] = None
     rating: Optional[float] = 4.8
     status: Optional[str] = "Available"
+    category: Optional[str] = "STATE"  # 'STATE' (29 Indian States) | 'ADB' (Asian Development Bank & Multilateral)
 
 class PartnerCreate(PartnerBase):
     pass
@@ -165,6 +167,7 @@ class PartnerUpdate(BaseModel):
     empanelment_status: Optional[str] = None
     turnover: Optional[str] = None
     employee_count: Optional[str] = None
+    country: Optional[str] = None
     state: Optional[str] = None
     city: Optional[str] = None
     pan_india_presence: Optional[bool] = None
@@ -177,6 +180,7 @@ class PartnerUpdate(BaseModel):
     synergy_roles: Optional[str] = None
     rating: Optional[float] = None
     status: Optional[str] = None
+    category: Optional[str] = None
 
 class PartnerSchema(PartnerBase):
     id: int
@@ -202,8 +206,8 @@ class TenderCollaborationStatusUpdate(BaseModel):
 class OutreachProposalRequest(BaseModel):
     tender_id: int
     partner_id: int
-    gisfy_contact_name: Optional[str] = "GISFY Proposals Directorate"
-    gisfy_contact_email: Optional[str] = "tenders@gisfy.co.in"
+    gisfy_contact_name: Optional[str] = None
+    gisfy_contact_email: Optional[str] = None
     custom_message: Optional[str] = None
     proposed_jv_split: Optional[str] = "60% Lead Bidder (GISFY) : 40% Specialized Partner"
 
@@ -219,13 +223,18 @@ class OutreachProposalResponse(BaseModel):
     subject: str
     proposal_letter: str
     collaboration_status: str
+    sender_email: Optional[str] = None
+    sender_name: Optional[str] = None
+    from_address: Optional[str] = None
+    preferred_client: Optional[str] = None
+    is_adb: Optional[bool] = False
 
 class CollaborationEmailDispatchRequest(BaseModel):
     tender_id: int
     partner_id: int
-    recipients: Optional[List[str]] = ["swethagisfy@gmail.com"]
-    gisfy_contact_name: Optional[str] = "Swetha (GISFY)"
-    gisfy_contact_email: Optional[str] = "swethagisfy@gmail.com"
+    recipients: Optional[List[str]] = None
+    gisfy_contact_name: Optional[str] = None
+    gisfy_contact_email: Optional[str] = None
     custom_message: Optional[str] = None
     proposed_jv_split: Optional[str] = "60% Lead Bidder (GISFY) : 40% Specialized Partner"
 
@@ -238,6 +247,6 @@ class SmtpConfigPayload(BaseModel):
     use_tls: bool = True
 
 class SmtpTestPayload(BaseModel):
-    target_email: str = "swethagisfy@gmail.com"
+    target_email: str = "bidding.gisfy@gmail.com"
 
 

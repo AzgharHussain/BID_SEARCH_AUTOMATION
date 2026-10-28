@@ -369,8 +369,8 @@ export default function AdbCmsTab({ API_BASE, showToast, onSelectIndianState }) 
           tender_id: selectedOpp.id,
           partner_id: outreachPartner.id || outreachPartner.partner_id,
           recipients: collabRecipients ? collabRecipients.split(',').map(e => e.trim()).filter(Boolean) : [outreachPartner.email],
-          gisfy_contact_name: "Farhath Bakka & GISFY Support",
-          gisfy_contact_email: "farhath@gisfy.co.in, support@gisfy.co.in",
+          gisfy_contact_name: "GISFY Support Team",
+          gisfy_contact_email: "support@gisfy.co.in",
           custom_message: outreachCustomNotes || `Multilateral ADB Assignment JV Collaboration: ${selectedOpp.title}`,
           proposed_jv_split: outreachJvSplit
         })
@@ -465,20 +465,23 @@ export default function AdbCmsTab({ API_BASE, showToast, onSelectIndianState }) 
               <span className="partner-domain-tag" style={{ background: '#e0f2fe', color: '#0369a1', fontSize: '0.74rem', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: '6px' }}>
                 {partner.primary_domain}
               </span>
-              {partner.pan_india_presence && (
+              {partner.country && partner.country !== 'India' ? (
+                <span style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontSize: '0.72rem', fontWeight: 800, padding: '0.15rem 0.5rem', borderRadius: '6px' }}>
+                  🌍 {partner.country} In-Country Partner
+                </span>
+              ) : partner.category === 'ADB' ? (
+                <span style={{ background: '#ede9fe', color: '#6d28d9', border: '1px solid #ddd6fe', fontSize: '0.72rem', fontWeight: 800, padding: '0.15rem 0.5rem', borderRadius: '6px' }}>
+                  🌐 International Multilateral Consultant
+                </span>
+              ) : partner.pan_india_presence ? (
                 <span style={{ background: '#dcfce7', color: '#166534', fontSize: '0.7rem', fontWeight: 700, padding: '0.15rem 0.45rem', borderRadius: '6px' }}>
                   🇮🇳 Pan-India Active
                 </span>
-              )}
-              {(partner.turnover?.includes('Global') || partner.turnover?.includes('Billion') || partner.city?.includes('London') || partner.city?.includes('Melbourne') || partner.city?.includes('Amersfoort') || partner.city?.includes('Allerød') || partner.city?.includes('Bad Homburg') || partner.city?.includes('Tokyo')) && (
-                <span style={{ background: '#ede9fe', color: '#6d28d9', fontSize: '0.7rem', fontWeight: 700, padding: '0.15rem 0.45rem', borderRadius: '6px' }}>
-                  🌐 Multilateral ADB Consultant
-                </span>
-              )}
+              ) : null}
             </div>
             <div className="partner-loc-tag" style={{ fontSize: '0.78rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
               <span>📍</span>
-              <b>Headquarters:</b> {partner.city ? `${partner.city}, ` : ''}{partner.state || 'India'}
+              <b>Jurisdiction:</b> {partner.city ? `${partner.city}, ` : ''}{partner.country || partner.state || 'Multilateral Lead'}
             </div>
           </div>
         </div>
@@ -3025,9 +3028,9 @@ export default function AdbCmsTab({ API_BASE, showToast, onSelectIndianState }) 
 
                 <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '8px', padding: '0.65rem 0.85rem', marginBottom: '0.65rem', fontSize: '0.78rem', color: '#065f46', lineHeight: 1.5 }}>
                   ✉️ <b>Verified Email Transmission Headers:</b><br />
-                  • <b>From:</b> Farhath Bakka &lt;farhath@gisfy.co.in&gt;, GISFY Support &lt;support@gisfy.co.in&gt;<br />
+                  • <b>From:</b> GISFY Support &lt;support@gisfy.co.in&gt;<br />
                   • <b>CC:</b> bidding@gisfy.co.in<br />
-                  • <b>Reply-To:</b> farhath@gisfy.co.in, support@gisfy.co.in<br />
+                  • <b>Reply-To:</b> support@gisfy.co.in<br />
                   • <b>To Recommended Partner:</b> <b>{outreachPartner?.name}</b> &lt;{outreachPartner?.email || 'N/A'}&gt;
                 </div>
 
@@ -3053,20 +3056,20 @@ export default function AdbCmsTab({ API_BASE, showToast, onSelectIndianState }) 
                     {collabSendingEmail ? '⏳ Dispatching Collaboration Email...' : '🚀 Send Collaboration Email to Partner'}
                   </button>
                   <a 
-                    href={`https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(collabRecipients || outreachPartner?.email || '')}&cc=${encodeURIComponent('bidding@gisfy.co.in')}&subject=${encodeURIComponent(outreachProposal.subject || `Exploring JV / Consortium Partnership – ADB Ref #${selectedOpp?.tender_id || selectedOpp?.id}`)}&body=${encodeURIComponent(outreachProposal.loi_content || outreachProposal.proposal_letter || '')}`}
+                    href={`https://outlook.office.com/mail/support@gisfy.co.in/deeplink/compose?to=${encodeURIComponent(collabRecipients || outreachPartner?.email || '')}&cc=${encodeURIComponent('bidding@gisfy.co.in')}&subject=${encodeURIComponent(outreachProposal.subject || `Exploring JV / Consortium Partnership – ADB Ref #${selectedOpp?.tender_id || selectedOpp?.id}`)}&body=${encodeURIComponent(outreachProposal.loi_content || outreachProposal.proposal_letter || '')}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{ padding: '0.55rem 0.95rem', background: '#0284c7', color: '#ffffff', borderRadius: '8px', textDecoration: 'none', fontWeight: 700, fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
                   >
-                    📬 Open in Microsoft Outlook ↗
+                    📬 Open in Microsoft Outlook (support@gisfy.co.in) ↗
                   </a>
                   <a 
-                    href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(collabRecipients || outreachPartner?.email || '')}&su=${encodeURIComponent(outreachProposal.subject || `Exploring JV / Consortium Partnership – ADB Ref #${selectedOpp?.tender_id || selectedOpp?.id}`)}`}
+                    href={`https://mail.google.com/mail/u/bidding.gisfy@gmail.com/?view=cm&fs=1&authuser=bidding.gisfy@gmail.com&to=${encodeURIComponent(collabRecipients || outreachPartner?.email || '')}&cc=${encodeURIComponent('bidding@gisfy.co.in')}&su=${encodeURIComponent(outreachProposal.subject || `Exploring JV / Consortium Partnership – ADB Ref #${selectedOpp?.tender_id || selectedOpp?.id}`)}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{ padding: '0.55rem 0.95rem', background: '#ea4335', color: '#ffffff', borderRadius: '8px', textDecoration: 'none', fontWeight: 700, fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
                   >
-                    ✉️ Gmail Web ↗
+                    ✉️ Open in Gmail (bidding.gisfy@gmail.com) ↗
                   </a>
                 </div>
 
@@ -3081,7 +3084,7 @@ export default function AdbCmsTab({ API_BASE, showToast, onSelectIndianState }) 
                       </span>
                     </div>
                     <div style={{ fontSize: '0.78rem', color: '#374151', lineHeight: 1.5 }}>
-                      From: <b>{collabEmailSentResult.from_address || 'Farhath Bakka <farhath@gisfy.co.in>, GISFY Support <support@gisfy.co.in>'}</b><br/>
+                      From: <b>{collabEmailSentResult.from_address || 'GISFY Support <support@gisfy.co.in>'}</b><br/>
                       CC: <b>{collabEmailSentResult.cc_recipients?.join(', ') || 'bidding@gisfy.co.in'}</b><br/>
                       To: <b>{collabEmailSentResult.recipients?.join(', ')}</b><br/>
                       Subject: <b>{collabEmailSentResult.subject}</b><br/>

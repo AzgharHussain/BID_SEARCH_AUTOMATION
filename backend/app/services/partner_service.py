@@ -1,6 +1,6 @@
 import json
 import re
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -8,6 +8,7 @@ from sqlalchemy import or_
 from app.models import models
 from app.schemas import schemas
 from app.services.adb_partners_data import ADB_PARTNERS_DATA
+from app.services.adb_country_partners_data import ADB_COUNTRY_PARTNERS_DATA
 from app.services.additional_genuine_partners_data import ADDITIONAL_GENUINE_PARTNERS_DATA
 
 # Comprehensive initial seed dataset representing prominent Indian geospatial, survey, IT, and infra firms
@@ -980,8 +981,32 @@ INITIAL_PARTNERS_SEED = [
     }
 ]
 
-# Combined pool of 105 verified partners: 42 Indian firms + 15 multilateral ADB consulting firms + 48 additional genuine domestic & multilateral partners
-ALL_PARTNERS_POOL = INITIAL_PARTNERS_SEED + ADB_PARTNERS_DATA + ADDITIONAL_GENUINE_PARTNERS_DATA
+# Combined pool of verified partners: 42 Indian firms (STATE) + 15 multilateral ADB consulting firms (ADB) + 40 in-country ADB partners (ADB) + 48 additional genuine domestic & multilateral partners
+for p in INITIAL_PARTNERS_SEED:
+    p.setdefault("category", "STATE")
+    p.setdefault("country", "India")
+
+for p in ADB_PARTNERS_DATA:
+    p["category"] = "ADB"
+    if p["name"] in ["Tata Consulting Engineers Ltd (TCE)", "RITES Limited (A Government of India Enterprise)"]:
+        p["country"] = "India"
+    else:
+        p.setdefault("country", "Regional / International")
+
+for p in ADB_COUNTRY_PARTNERS_DATA:
+    p["category"] = "ADB"
+    p["country"] = p.get("state", "ADB Country")
+
+for i, p in enumerate(ADDITIONAL_GENUINE_PARTNERS_DATA):
+    if i < 22:
+        p["category"] = "ADB"
+        p["country"] = "Regional / International"
+        p["state"] = "Regional / Multilateral Lead"
+    else:
+        p["category"] = "STATE"
+        p.setdefault("country", "India")
+
+ALL_PARTNERS_POOL = INITIAL_PARTNERS_SEED + ADB_PARTNERS_DATA + ADB_COUNTRY_PARTNERS_DATA + ADDITIONAL_GENUINE_PARTNERS_DATA
 
 
 def ensure_partners_seeded(db: Session):
@@ -1012,7 +1037,7 @@ def ensure_partners_seeded(db: Session):
         else:
             partner = existing[name]
             for key, val in p_data.items():
-                if getattr(partner, key) != val:
+                if hasattr(partner, key) and getattr(partner, key) != val:
                     setattr(partner, key, val)
                     changed = True
 
@@ -1025,14 +1050,18 @@ def get_all_partners(
     search: Optional[str] = None,
     domain: Optional[str] = None,
     state: Optional[str] = None,
+    category: Optional[str] = None,
     certification: Optional[str] = None,
     status: Optional[str] = None,
     skip: int = 0,
-    limit: int = 50
+    limit: int = 150
 ) -> List[models.Partner]:
-    """Retrieve and filter partners from database."""
+    """Retrieve and filter partners from database with 29 States vs ADB separation."""
     ensure_partners_seeded(db)
     query = db.query(models.Partner)
+
+    if category and category.upper() != "ALL":
+        query = query.filter(models.Partner.category == category.upper())
 
     if search:
         search_pattern = f"%{search}%"
@@ -1075,11 +1104,155 @@ def get_all_partners(
     return query.order_by(models.Partner.rating.desc(), models.Partner.name.asc()).offset(skip).limit(limit).all()
 
 
-def compute_partner_match(tender: models.Tender, partner: models.Partner) -> Dict[str, Any]:
+COUNTRY_CODE_MAP = {
+    'PAK': 'Pakistan',
+    'CAM': 'Cambodia',
+    'PRC': 'China',
+    'UZB': 'Uzbekistan',
+    'BAN': 'Bangladesh',
+    'GEO': 'Georgia',
+    'TAJ': 'Tajikistan',
+    'BHU': 'Bhutan',
+    'MON': 'Mongolia',
+    'KGZ': 'Kyrgyz Republic',
+    'FIJ': 'Fiji',
+    'PNG': 'Papua New Guinea',
+    'KIR': 'Kiribati',
+    'NEP': 'Nepal',
+    'AZE': 'Azerbaijan',
+    'KAZ': 'Kazakhstan',
+    'TKM': 'Turkmenistan',
+    'THA': 'Thailand',
+    'LAO': 'Lao PDR',
+    'INO': 'Indonesia',
+    'SRI': 'Sri Lanka',
+    'PLW': 'Palau',
+    'IND': 'India',
+    'REG': 'Regional',
+    'PHI': 'Philippines'
+}
+
+
+def detect_tender_country(tender: models.Tender, db: Optional[Session] = None) -> str:
+    """
+    Accurately identify the ADB host country for a tender from:
+    1. adb_opportunity_details.country
+    2. tender.tender_id prefix e.g. ADB-Pakistan-...
+    3. standard 3-letter country code in title e.g. LOAN-4553 CAM:, PAK:, PRC:, etc.
+    4. country mentions in title or description.
+    Defaults to 'Regional' for multilateral cross-country projects.
+    """
+    if not tender:
+        return "Regional"
+
+    # 1. Check if opportunity details has explicit country
+    if db is not None and getattr(tender, "id", None):
+        try:
+            aod = db.query(models.AdbOpportunityDetail).filter(models.AdbOpportunityDetail.tender_id == tender.id).first()
+            if aod and aod.country and aod.country.strip():
+                return aod.country.strip()
+        except Exception:
+            pass
+
+    if hasattr(tender, "adb_details") and tender.adb_details and getattr(tender.adb_details, "country", None):
+        return tender.adb_details.country.strip()
+
+    t_code = (tender.tender_id or "").strip()
+    title = (tender.title or "").strip()
+    desc = (tender.description or "").strip()
+
+    # 2. Check tender_id e.g. ADB-Pakistan-..., ADB-Kyrgyz_Republic-...
+    m = re.search(r"ADB-([A-Za-z_]+)-", t_code)
+    if m:
+        c_cand = m.group(1).replace("_", " ")
+        for code, name in COUNTRY_CODE_MAP.items():
+            if name.lower() == c_cand.lower():
+                return name
+        return c_cand
+
+    # 3. Check 3-letter codes in title: LOAN-4553 CAM:, TA-10850 AZE:, PAK:, PRC:, etc.
+    m = re.search(r"\b([A-Z]{3})\b:", title)
+    if m and m.group(1) in COUNTRY_CODE_MAP:
+        return COUNTRY_CODE_MAP[m.group(1)]
+
+    # 4. Check country mentions in title or description
+    for code, country_name in COUNTRY_CODE_MAP.items():
+        if country_name == "Regional":
+            continue
+        pattern = rf"\b{re.escape(country_name)}\b"
+        if re.search(pattern, title, re.IGNORECASE) or re.search(pattern, desc, re.IGNORECASE):
+            return country_name
+
+    # 5. Default
+    return "Regional"
+
+
+def detect_tender_sector(
+    title: Optional[str] = "",
+    project_sector: Optional[str] = "",
+    department: Optional[str] = "",
+    keywords_str: Optional[str] = ""
+) -> Tuple[str, str]:
+    """
+    Intelligently detect the high-level sector for a tender (e.g. Water Resources, Software, Agriculture).
+    Returns (subject_sector_title, body_sector_phrase).
+    """
+    text = f"{title or ''} {project_sector or ''} {department or ''} {keywords_str or ''}".lower()
+
+    if any(w in text for w in ['water resource', 'iwrm', 'irrigation', 'hydrolog', 'drainage', 'flood', 'dam ', 'river basin', 'water supply', 'watershed', 'canal', 'wastewater', 'aquifer', 'reservoir', 'water balance', 'water security', 'hydro']):
+        return 'Water Resources Project', 'water resources project'
+
+    if any(w in text for w in ['agricultur', 'farmland', 'crop', 'coffee', 'cashew', 'agroforestry', 'rural livelihood', 'smallholder', 'farming', 'horticultur', 'livestock', 'veterinary']):
+        return 'Agriculture & Rural Development Project', 'agriculture and rural development project'
+
+    if any(w in text for w in ['railway', 'transport', 'rapid transit', 'highway', 'road', 'corridor', 'metro', 'freight', 'traffic', 'e-mobility', 'vehicle', 'bridge']):
+        return 'Transport & Infrastructure Project', 'transport and infrastructure project'
+
+    if any(w in text for w in ['power', 'energy', 'solar', 'grid', 'electricity', 'decarbonization', 'substation', 'transmission', 'wind energy', 'photovoltaic']):
+        return 'Energy & Power Sector Project', 'energy and power sector project'
+
+    if any(w in text for w in ['health', 'primary health', 'medical', 'hospital', 'disease', 'epidemiology', 'biomedical', 'clinical']):
+        return 'Healthcare Systems Project', 'healthcare systems project'
+
+    if any(w in text for w in ['software', 'information system', 'mis', 'portal', 'website', 'it infrastructure', 'cloud', 'data center', 'application development', 'database', 'ict', 'scada', 'telecom', 'computer', 'digitization', 'digital twin']):
+        return 'Software & IT Solutions Project', 'software and IT solutions project'
+
+    if any(w in text for w in ['cctv', 'surveillance', 'camera', 'security system', 'monitoring system', 'control room']):
+        return 'Smart Surveillance & Security Project', 'smart surveillance and security project'
+
+    if any(w in text for w in ['environment', 'climate', 'forest', 'biodiversity', 'coastal', 'ecological', 'pollution', 'waste', 'bio-medical waste', 'rehabilitation', 'conservation', 'subsidence']):
+        return 'Environment & Climate Resilience Project', 'environment and climate resilience project'
+
+    if any(w in text for w in ['urban', 'housing', 'municipal', 'town planning', 'city', 'civil works', 'building', 'drain near', 'construction']):
+        return 'Urban Infrastructure Project', 'urban infrastructure project'
+
+    if any(w in text for w in ['finance', 'financial', 'audit', 'governance', 'tax', 'accounting', 'advisory', 'capital accelerator', 'macro economic', 'trade']):
+        return 'Financial & Governance Advisory Project', 'financial and governance advisory project'
+
+    return 'Technology & Infrastructure Project', 'technology and infrastructure project'
+
+
+def format_clean_subject(
+    is_adb: bool = False,
+    country: Optional[str] = None,
+    state_name: Optional[str] = None,
+    tender_id: Optional[str] = None,
+    raw_title: Optional[str] = None,
+    project_sector: Optional[str] = None,
+    department: Optional[str] = None,
+    keywords_str: Optional[str] = None
+) -> str:
+    """Build subject using the sector: Exploring JV / Consortium Partnership: {Sector} Project"""
+    sec_title, _ = detect_tender_sector(title=raw_title, project_sector=project_sector, department=department, keywords_str=keywords_str)
+    return f"Exploring JV / Consortium Partnership: {sec_title}"
+
+
+def compute_partner_match(tender: models.Tender, partner: models.Partner, db: Optional[Session] = None) -> Dict[str, Any]:
     """
     Intelligently calculate match score, category, and specific 'why needed' rationale
     for a collaboration partner based on the tender's exact technical requirements,
-    scope of work, state location, keywords, department, and title.
+    scope of work, state/country location, keywords, department, and title.
+    Enforces STRICT SEPARATION between ADB portal tenders and 29 Indian States tenders.
     """
     tender_title = (tender.title or "").lower()
     tender_desc = (tender.description or "").lower()
@@ -1096,116 +1269,122 @@ def compute_partner_match(tender: models.Tender, partner: models.Partner) -> Dic
     p_name = (partner.name or "").lower()
     p_all = f"{p_name} {p_domain} {p_sec} {p_certs} {p_desc}"
     p_state = (partner.state or "").lower()
+    p_country = (getattr(partner, "country", None) or partner.state or "").lower()
+    p_category = (getattr(partner, "category", "STATE") or "STATE").upper()
     t_state_lower = tender_state.lower()
+
+    is_adb_tender = bool(
+        "adb" in t_state_lower or 
+        (tender.tender_id and tender.tender_id.upper().startswith("ADB")) or
+        any(w in tender_text for w in ["csrn", "asian development bank", "multilateral", "loan e-", "ta-", "grant-"])
+    )
+
+    # =========================================================================
+    # 0. ASIAN DEVELOPMENT BANK (ADB CMS) / MULTILATERAL CONSULTING ASSIGNMENTS
+    # =========================================================================
+    if is_adb_tender:
+        # STRICT RULE 1: Non-ADB categorized partners are completely ineligible (0.0 score)
+        if p_category != "ADB":
+            return {
+                "match_score": 0.0,
+                "match_category": "Not Eligible",
+                "why_needed": "Domestic Indian state firm is not eligible for ADB international consulting assignments.",
+                "synergy_scope": "N/A"
+            }
+
+        tender_country = detect_tender_country(tender, db)
+        tc_lower = tender_country.lower()
+
+        # STRICT RULE 2: If tender is outside India, domestic Indian entities (e.g. TCE, RITES) are not eligible
+        is_partner_domestic_india = "india" in p_country or "india" in p_state or "rites" in p_name or "tata consulting engineers" in p_name
+        if tc_lower != "india" and is_partner_domestic_india and "multilateral lead" not in p_state:
+            return {
+                "match_score": 0.0,
+                "match_category": "Not Eligible",
+                "why_needed": f"Domestic Indian entity is not eligible for ADB operations in {tender_country}.",
+                "synergy_scope": "N/A"
+            }
+
+        # Check for in-country host partner match
+        is_in_country_match = False
+        if tc_lower != "regional":
+            if tc_lower in p_country or tc_lower in p_state:
+                is_in_country_match = True
+            elif "fiji" in tc_lower and ("pacific" in p_country or "fiji" in p_state):
+                is_in_country_match = True
+            elif "kiribati" in tc_lower and ("pacific" in p_country or "kiribati" in p_state):
+                is_in_country_match = True
+            elif "papua new guinea" in tc_lower and ("pacific" in p_country or "png" in p_state):
+                is_in_country_match = True
+            elif "palau" in tc_lower and ("pacific" in p_country or "palau" in p_state):
+                is_in_country_match = True
+
+        # PRIORITY 1: In-Country Host Partner (98.5%)
+        if is_in_country_match:
+            return {
+                "match_score": 98.5,
+                "match_category": f"In-Country Lead Partner ({tender_country})",
+                "why_needed": f"Premier accredited in-country consulting engineering partner in {tender_country} with established institutional presence, national statutory licensing, and deep local client relationships for ADB operations.",
+                "synergy_scope": f"{partner.name} leads in-country client liaison, field engineering surveys, and statutory clearances in {tender_country}; GISFY delivers advanced WebGIS platform, remote sensing analysis, and enterprise spatial geodatabase."
+            }
+
+        # PRIORITY 2: Premier International Multilateral Lead Consultants
+        is_international_lead = any(firm in p_name for firm in [
+            "smec", "mott", "egis", "wsp", "cowi", "nippon", "koei", "oriental", "oc global",
+            "dhi", "haskoning", "arup", "meinhardt", "gopa", "niras", "jacobs", "atkins",
+            "ghd", "stantec", "black & veatch", "cdm smith", "arcadis", "ramboll", "parsons",
+            "afry", "tractebel", "sweco", "louis berger"
+        ])
+
+        if is_international_lead:
+            if tc_lower == "regional":
+                score = 98.0
+                match_cat = "Multilateral Lead Consultant"
+                why = "ADB Empaneled Tier-1 International Consulting Organization with extensive regional portfolio across Asia-Pacific."
+            else:
+                score = 93.5
+                match_cat = "Multilateral Consortium Partner"
+                why = f"ADB Empaneled International Lead Consultant providing global technical oversight, FIDIC contract management, and multilateral compliance for {tender_country} assignment."
+
+            return {
+                "match_score": score,
+                "match_category": match_cat,
+                "why_needed": why,
+                "synergy_scope": f"{partner.name} provides international team leadership and multilateral contract management; GISFY delivers enterprise GIS architecture and digital mapping workflows."
+            }
+
+        # ADB India Package Domestic Multilateral Lead
+        if tc_lower == "india" and is_partner_domestic_india:
+            return {
+                "match_score": 97.0,
+                "match_category": "National Multilateral Partner",
+                "why_needed": "Premier Indian multidisciplinary consultancy with accredited ADB project delivery credentials in India.",
+                "synergy_scope": f"{partner.name} provides national engineering leadership; GISFY delivers GIS software and spatial analytics."
+            }
+
+        # Other ADB Partners
+        return {
+            "match_score": 72.0,
+            "match_category": "Multilateral Partner",
+            "why_needed": f"Accredited ADB consulting partner with complementary domain expertise in {partner.primary_domain}.",
+            "synergy_scope": f"{partner.name} supports project delivery; GISFY delivers GIS workflows."
+        }
+
+    # =========================================================================
+    # STRICT SEPARATION: 29 INDIAN STATES PUBLIC TENDERS
+    # =========================================================================
+    # Multilateral foreign partners are not eligible for domestic Indian state public tenders
+    if p_category == "ADB" and "india" not in p_country and "india" not in p_state:
+        return {
+            "match_score": 0.0,
+            "match_category": "Not Eligible",
+            "why_needed": "Multilateral foreign consultant not eligible for domestic Indian state public procurement.",
+            "synergy_scope": "N/A"
+        }
 
     base_score = 60.0
     matched_reasons = []
     synergies = []
-
-    # 0. ASIAN DEVELOPMENT BANK (ADB CMS) / MULTILATERAL CONSULTING ASSIGNMENTS
-    if "adb" in t_state_lower or any(w in tender_text for w in ["adb", "csrn", "asian development bank", "multilateral", "loan e-", "ta-", "grant-"]):
-        # ADB International Empaneled Partners
-        if "smec" in p_name:
-            base_score += 37.0
-            matched_reasons.append("ADB Empaneled International Lead Consultant with 500+ multilateral projects across transport, water, and urban infrastructure")
-            synergies.append("SMEC International leads international procurement & FIDIC contract administration; GISFY executes WebGIS platform and spatial database")
-        elif "mott" in p_name:
-            base_score += 37.0
-            matched_reasons.append("ADB Registered International Consulting Organization specializing in climate resilience, smart water GIS & multilateral advisory")
-            synergies.append("Mott MacDonald leads climate modeling & safeguards; GISFY builds spatial analytics dashboards")
-        elif "egis" in p_name:
-            base_score += 36.5
-            matched_reasons.append("ADB & World Bank empaneled Project Management & Construction Supervision Consultant (PMCSC) for urban and transport infrastructure")
-            synergies.append("Egis India provides PMCSC engineering supervision; GISFY manages GIS corridor asset inventory")
-        elif "wsp" in p_name:
-            base_score += 36.5
-            matched_reasons.append("Leading global engineering & environmental consulting firm with extensive ADB multilateral project delivery credentials")
-            synergies.append("WSP provides environmental safeguards & digital twin integration; GISFY implements cloud geodatabase")
-        elif "cowi" in p_name:
-            base_score += 36.0
-            matched_reasons.append("ADB Registered International Consultant for airborne LiDAR, marine, transport corridor & geotechnical spatial survey")
-            synergies.append("COWI leads high-precision aerial LiDAR surveys; GISFY prepares spatial vector GIS datasets")
-        elif "nippon" in p_name or "koei" in p_name:
-            base_score += 37.0
-            matched_reasons.append("ADB & JICA Premier International Engineering Consultant for water resources GIS, river basin flood modeling & disaster management")
-            synergies.append("Nippon Koei provides international water resources team leadership; GISFY builds real-time flood monitoring geoportals")
-        elif "oriental" in p_name or "oc global" in p_name:
-            base_score += 36.0
-            matched_reasons.append("ADB Empaneled International Infrastructure & Transport Consultant for multi-modal corridor mapping and urban mobility")
-            synergies.append("OC Global leads multilateral transport engineering; GISFY delivers spatial transit GIS workflows")
-        elif "dhi" in p_name:
-            base_score += 36.5
-            matched_reasons.append("Global water environment specialist and author of MIKE hydro-numerical modeling suite for ADB water and coastal assignments")
-            synergies.append("DHI executes hydraulic flood simulations; GISFY provides WebGIS mapping interfaces")
-        elif "haskoning" in p_name:
-            base_score += 36.0
-            matched_reasons.append("International engineering consultancy for climate-resilient water technology, coastal protection, and maritime GIS")
-            synergies.append("Royal HaskoningDHV delivers coastal engineering; GISFY builds spatial marine GIS database")
-        elif "tata consulting engineers" in p_name:
-            base_score += 35.5
-            matched_reasons.append("Premier Indian engineering consultancy with extensive multilateral track record across mega infrastructure and power")
-            synergies.append("TCE provides comprehensive multi-disciplinary engineering; GISFY provides spatial project tracking")
-        elif "wapcos" in p_name:
-            base_score += 36.0
-            matched_reasons.append("Central PSU & premier ADB/World Bank empaneled consultant for international water resources, irrigation & hydropower")
-            synergies.append("WAPCOS provides international hydrology credentials & key experts; GISFY delivers WebGIS analytical geodatabase")
-        elif "arup" in p_name:
-            base_score += 36.5
-            matched_reasons.append("ADB Registered International Consulting Organization specializing in climate resilience, smart transit & digital twins")
-            synergies.append("Arup leads multilateral infrastructure advisory & master planning; GISFY implements spatial digital twin analytics")
-        elif "rites" in p_name:
-            base_score += 35.5
-            matched_reasons.append("Leading transport infrastructure and railway consultancy with extensive ADB and international project portfolio")
-            synergies.append("RITES leads transport planning and engineering review; GISFY manages spatial corridor geodatabase")
-        elif "meinhardt" in p_name:
-            base_score += 35.0
-            matched_reasons.append("International consulting engineering firm for urban master planning, infrastructure design, and ADB urban programs")
-            synergies.append("Meinhardt provides urban planning and structural design; GISFY delivers 3D city GIS platform")
-        elif "gopa" in p_name:
-            base_score += 35.0
-            matched_reasons.append("Leading European development consultancy firm managing ADB and multilateral institutional strengthening contracts")
-            synergies.append("GOPA provides multilateral project leadership; GISFY implements spatial monitoring portals")
-        elif "niras" in p_name:
-            base_score += 35.0
-            matched_reasons.append("International multidisciplinary consultancy for environmental management, climate change adaptation, and natural resources")
-            synergies.append("NIRAS conducts environmental impact assessments; GISFY develops geospatial monitoring systems")
-        elif any(w in tender_text for w in ["water", "flood", "river", "irrigation", "drainage", "sanitation"]):
-            if "ceinsys" in p_name:
-                base_score += 31.0
-                matched_reasons.append("ADB municipal smart water distribution, SCADA telemetry, and GIS utility network consultant")
-                synergies.append("Ceinsys Tech provides hydraulic telemetry; GISFY develops cloud geospatial portal")
-        elif any(w in tender_text for w in ["environment", "climate", "resilience", "esg", "safeguard", "waste", "circular"]):
-            if "erm" in p_name:
-                base_score += 36.0
-                matched_reasons.append("Global multidisciplinary environmental, social safeguards (ESS), circular economy, and climate resilience consultant for ADB operations")
-                synergies.append("ERM India provides ADB environmental & social framework compliance; GISFY models spatial climate risk and environmental datasets")
-            elif "vimta" in p_name:
-                base_score += 32.0
-                matched_reasons.append("NABET-accredited environmental impact assessment (EIA) and ecological baseline expert for multilateral infrastructure")
-                synergies.append("Vimta Labs leads environmental baselines; GISFY prepares spatial GIS thematic maps")
-        elif any(w in tender_text for w in ["transport", "railway", "rail", "road", "highway", "urban", "bridge"]):
-            if "aarvee" in p_name:
-                base_score += 36.0
-                matched_reasons.append("ADB & World Bank funded multi-modal transport, railway modernization, and civil infrastructure consultancy")
-                synergies.append("Aarvee Associates provides certified transport engineering & international experts; GISFY operates spatial route alignment & corridor GIS")
-            elif "consulting engineers group" in p_name:
-                base_score += 33.0
-                matched_reasons.append("Premier highway, railway, and metro civil infrastructure engineering consultancy with multilateral project credentials")
-                synergies.append("CEG delivers structural calculations & design reviews; GISFY provides spatial site monitoring")
-        elif any(w in tender_text for w in ["power", "energy", "solar", "substation", "transmission"]):
-            if "cyient" in p_name:
-                base_score += 36.0
-                matched_reasons.append("Global engineering consultancy specializing in utility power transmission, substation GIS asset management, and grid modernization")
-                synergies.append("Cyient conducts power grid asset modeling; GISFY delivers spatial electrical geodatabase")
-        else:
-            if "rmsi" in p_name:
-                base_score += 35.0
-                matched_reasons.append("Global geospatial services and disaster risk mitigation consultancy with extensive ADB & World Bank project execution track record")
-                synergies.append("RMSI brings ADB multilateral project delivery credentials; GISFY provides agile software engineering and GIS processing")
-            elif "genesys" in p_name:
-                base_score += 30.0
-                matched_reasons.append("3D Digital Twin and enterprise spatial geodatabase consultant for urban modernization")
-                synergies.append("Genesys produces 3D spatial models; GISFY delivers cloud-based stakeholder portal")
 
     # 1. WATER RESOURCES / PIPELINE / AMRUT / SCADA / DRAINAGE / IRRIGATION / RESERVOIR
     if any(w in tender_text for w in ["water", "pipeline", "scada", "amrut", "jal jeevan", "irrigation", "canal", "reservoir", "aquaculture", "hydraulic", "drainage", "hydrology", "dam", "flood", "pumping", "belapur", "nerul", "turbhe", "vashi"]):
@@ -1591,11 +1770,13 @@ def search_partners_for_tender(
     tender_id: int,
     query_str: Optional[str] = None,
     domain_filter: Optional[str] = None,
+    category_filter: Optional[str] = None,
     min_score: Optional[float] = 80.0
 ) -> Dict[str, Any]:
     """
     Find and rank collaboration partners for a specific tender.
-    By default filters to show only high matches (score >= 80%).
+    Strictly separates ADB portal tenders (with genuine in-country partners)
+    and 29 Indian States domestic tenders (with verified Indian state partners).
     """
     ensure_partners_seeded(db)
 
@@ -1603,7 +1784,22 @@ def search_partners_for_tender(
     if not tender:
         return {"error": "Tender not found", "matched_partners": []}
 
-    partners = get_all_partners(db, search=query_str, domain=domain_filter, limit=150)
+    is_adb_tender = bool(
+        (tender.state and "adb" in tender.state.name.lower()) or 
+        (tender.tender_id and tender.tender_id.upper().startswith("ADB")) or
+        (tender.tender_id and "ADB" in tender.tender_id.upper())
+    )
+    tender_scope = "ADB" if is_adb_tender else "29_STATES"
+    tender_country = detect_tender_country(tender, db) if is_adb_tender else (tender.state.name if tender.state else "Pan-India")
+
+    # Strict Scope & Category Isolation:
+    # ADB Tenders MUST query ONLY 'ADB' category partners (genuine in-country + international lead firms)
+    # 29 States Tenders MUST query ONLY 'STATE' category partners (Indian domestic firms)
+    target_category = "ADB" if is_adb_tender else "STATE"
+    if category_filter and category_filter.upper() != "ALL":
+        target_category = category_filter.upper()
+
+    partners = get_all_partners(db, search=query_str, domain=domain_filter, category=target_category, limit=200)
 
     # Load any existing collaboration status overrides for this tender
     collab_records = db.query(models.TenderCollaboration).filter(models.TenderCollaboration.tender_id == tender.id).all()
@@ -1611,7 +1807,10 @@ def search_partners_for_tender(
 
     matched_results = []
     for p in partners:
-        match_info = compute_partner_match(tender, p)
+        match_info = compute_partner_match(tender, p, db=db)
+        if match_info.get("match_score", 0.0) <= 0.0:
+            continue
+
         collab_rec = collab_map.get(p.id)
         
         status = collab_rec.status if collab_rec else "Recommended"
@@ -1628,8 +1827,10 @@ def search_partners_for_tender(
             "empanelment_status": p.empanelment_status,
             "turnover": p.turnover,
             "employee_count": p.employee_count,
+            "country": getattr(p, "country", None) or p.state,
             "state": p.state,
             "city": p.city,
+            "category": getattr(p, "category", "STATE") or "STATE",
             "pan_india_presence": p.pan_india_presence,
             "contact_person": p.contact_person,
             "designation": p.designation,
@@ -1662,11 +1863,17 @@ def search_partners_for_tender(
             "title": tender.title,
             "department": tender.department,
             "state_name": tender.state.name if tender.state else "Pan-India",
+            "country": tender_country,
+            "is_adb": is_adb_tender,
+            "scope": tender_scope,
             "published_date": tender.published_date.isoformat() if tender.published_date else None,
             "last_date": tender.last_date.isoformat() if tender.last_date else None,
             "portal_tender_url": tender.portal_tender_url,
             "keywords": [k.keyword for k in tender.keywords] if tender.keywords else []
         },
+        "tender_scope": tender_scope,
+        "tender_country": tender_country,
+        "is_adb_tender": is_adb_tender,
         "total_matched": len(filtered_results),
         "total_candidates": len(matched_results),
         "min_score": min_score,
@@ -1721,10 +1928,34 @@ def generate_outreach_proposal(db: Session, payload: schemas.OutreachProposalReq
     dept_name = tender.department or f"State Government of {state_name}"
     due_date_str = tender.last_date.strftime("%d %b %Y, %I:%M %p") if tender.last_date else "As per official portal notice"
 
-    subject = f"Exploring JV / Consortium Partnership – Tender #{tender.tender_id} ({state_name}): Collaboration with GISFY"
-    clean_proj = (tender.title or f"Tender #{tender.tender_id}").strip().strip("[]").strip().rstrip(".")
-    contact_name = payload.gisfy_contact_name or "Farhath Bakka | Business Development Executive"
-    contact_email = payload.gisfy_contact_email or "farhath@gisfy.co.in"
+    kw_str = " ".join([k.keyword for k in tender.keywords]) if tender.keywords else ""
+    proj_sec = getattr(getattr(tender, "adb_details", None), "project_sector", None)
+    sec_title, sec_phrase = detect_tender_sector(
+        title=tender.title,
+        project_sector=proj_sec,
+        department=tender.department,
+        keywords_str=kw_str
+    )
+    subject = f"Exploring JV / Consortium Partnership: {sec_title}"
+
+    if is_adb:
+        contact_email = payload.gisfy_contact_email if (payload.gisfy_contact_email and payload.gisfy_contact_email not in ["tenders@gisfy.co.in", "bidding.gisfy@gmail.com", "swethagisfy@gmail.com"]) else "support@gisfy.co.in"
+        if "farhath" in contact_email.lower():
+            contact_name = "Farhath | Business Development Executive"
+        elif "firza" in contact_email.lower() or "irza" in contact_email.lower():
+            contact_name = "Firza | Business Development Executive"
+        else:
+            contact_name = "N C Harika | Business Development Executive"
+        sender_dept = "GISFY Support & Partnerships Team"
+        from_address = f"{contact_name} <{contact_email}>"
+    else:
+        contact_name = "N C Harika | Business Development Executive"
+        contact_email = payload.gisfy_contact_email if (payload.gisfy_contact_email and payload.gisfy_contact_email not in ["tenders@gisfy.co.in", "support@gisfy.co.in", "swethagisfy@gmail.com"]) else "bidding.gisfy@gmail.com"
+        sender_dept = "29 Indian States Tendering & Domestic Consortiums"
+        from_address = f"{contact_name} <{contact_email}>"
+
+    from app.services.collaboration_email_service import extract_project_scope_lines
+    scope_text = extract_project_scope_lines(getattr(tender, "description", None), sec_phrase)
 
     letter_text = f"""Dear Team,
 
@@ -1732,24 +1963,30 @@ Greetings from GISFY Private Limited, India.
 
 We are an ISO-certified technology company specialising in Geographic Information Systems (GIS), WebGIS, Artificial Intelligence and Machine Learning (AI/ML), data analytics, Management Information Systems (MIS), cloud solutions, and digital transformation.
 
-We are currently exploring a potential Joint Venture (JV) / Consortium partnership for {clean_proj}.
+We are currently exploring a potential Joint Venture (JV) / Consortium partnership with your organisation to collaborate and work together for an upcoming {sec_phrase}.
 
-Considering your organisation's expertise and experience, we believe there may be valuable opportunities for collaboration in the joint submission and implementation of this assignment, subject to the applicable procurement requirements.
+{scope_text}
 
-If your organisation is interested in exploring this partnership opportunity, we kindly request you to share the following documents for our preliminary evaluation:
+Considering your organisation's expertise and experience, we believe there are strong synergies for mutual collaboration in the joint execution and implementation of this project.
 
-• Company Profile – Highlighting your organisation's technical capabilities, core competencies, and areas of expertise.
-• Company Registration Certificate – Valid documentation confirming the legal registration of your organisation.
-• Tax Registration Certificate – Applicable tax registration documents issued by the relevant authorities.
-• CVs of Key Experts – Profiles of qualified professionals with expertise relevant to the proposed assignment.
-• Relevant Project Experience – Details of similar completed or ongoing projects, including project descriptions, scope of work, client details, and your organisation's role.
+If your organisation is interested in exploring this partnership opportunity, we kindly request you to share the following preliminary documents for our mutual evaluation:
 
-Upon receiving and reviewing the above documents, we would be pleased to discuss the proposed collaboration structure and share a draft Joint Venture / Consortium Agreement for your review and mutual consideration.
+• Company Profile – Highlighting technical capabilities, core competencies, and areas of expertise.
+
+• Company Registration Certificate – Valid documentation confirming legal registration.
+
+• Tax Registration Certificate – Applicable tax registration documents.
+
+• CVs of Key Experts – Profiles of qualified professionals and technical specialists.
+
+• Relevant Project Experience – Overview of similar completed or ongoing projects.
+
+Upon receiving and reviewing these details, we would be pleased to schedule an introductory discussion and share a draft Joint Venture / Consortium Agreement for your review and mutual consideration.
 
 We look forward to your positive response and the opportunity to establish a mutually beneficial partnership.
 
 Thanks & Regards,
-Farhath Bakka | Business Development Executive
+{contact_name}
 GISFY Private Limited, Ground Floor, DSL Abacus IT Park,
 Uppal, Hyderabad, Telangana – 500039, India
 Mobile: +91 90631 20678
@@ -1770,7 +2007,12 @@ Website: www.gisfy.co.in
         "due_date": due_date_str,
         "subject": subject,
         "proposal_letter": letter_text,
-        "collaboration_status": "Outreach Sent"
+        "collaboration_status": "Outreach Sent",
+        "sender_email": contact_email,
+        "sender_name": contact_name,
+        "from_address": from_address,
+        "preferred_client": "outlook" if is_adb else "gmail",
+        "is_adb": is_adb
     }
 
 
@@ -1794,13 +2036,38 @@ def send_collaboration_outreach_email(
     dept_name = tender.department or f"State Government of {state_name}"
     due_date_str = tender.last_date.strftime("%d %b %Y, %I:%M %p") if tender.last_date else "As per official portal notice"
 
-    subject = f"Exploring JV / Consortium Partnership – Tender #{tender.tender_id} ({state_name}): Collaboration with GISFY"
-    clean_proj = (tender.title or f"Tender #{tender.tender_id}").strip().strip("[]").strip().rstrip(".")
+    is_adb = bool((tender.state and "adb" in tender.state.name.lower()) or (tender.tender_id and str(tender.tender_id).upper().startswith("ADB")))
+    country = detect_tender_country(tender, db) if is_adb else None
+    kw_str = " ".join([k.keyword for k in tender.keywords]) if tender.keywords else ""
+    proj_sec = getattr(getattr(tender, "adb_details", None), "project_sector", None)
+    sec_title, sec_phrase = detect_tender_sector(
+        title=tender.title,
+        project_sector=proj_sec,
+        department=tender.department,
+        keywords_str=kw_str
+    )
+    subject = f"Exploring JV / Consortium Partnership: {sec_title}"
 
-    contact_name = payload.gisfy_contact_name or "Farhath Bakka & GISFY Support"
-    contact_email = payload.gisfy_contact_email or "farhath@gisfy.co.in, support@gisfy.co.in"
-    from_address = "Farhath Bakka <farhath@gisfy.co.in>, GISFY Support <support@gisfy.co.in>"
+    if is_adb:
+        contact_email = payload.gisfy_contact_email if (payload.gisfy_contact_email and payload.gisfy_contact_email not in ["tenders@gisfy.co.in", "bidding.gisfy@gmail.com", "swethagisfy@gmail.com"]) else "support@gisfy.co.in"
+        if "farhath" in contact_email.lower():
+            contact_name = "Farhath | Business Development Executive"
+        elif "firza" in contact_email.lower() or "irza" in contact_email.lower():
+            contact_name = "Firza | Business Development Executive"
+        else:
+            contact_name = "N C Harika | Business Development Executive"
+        from_address = f"{contact_name} <{contact_email}>"
+        sender_dept = "Support & Outreach Operations (ADB Multilateral Projects)"
+    else:
+        contact_name = "N C Harika | Business Development Executive"
+        contact_email = payload.gisfy_contact_email if (payload.gisfy_contact_email and payload.gisfy_contact_email not in ["tenders@gisfy.co.in", "support@gisfy.co.in", "swethagisfy@gmail.com"]) else "bidding.gisfy@gmail.com"
+        from_address = f"{contact_name} <{contact_email}>"
+        sender_dept = "29 Indian States Tendering & Domestic Consortiums"
+
     cc_recipients = ["bidding@gisfy.co.in"]
+
+    from app.services.collaboration_email_service import extract_project_scope_lines
+    scope_text = extract_project_scope_lines(getattr(tender, "description", None), sec_phrase)
 
     letter_text = f"""Dear Team,
 
@@ -1808,16 +2075,22 @@ Greetings from GISFY Private Limited, India.
 
 We are an ISO-certified technology company specialising in Geographic Information Systems (GIS), WebGIS, Artificial Intelligence and Machine Learning (AI/ML), data analytics, Management Information Systems (MIS), cloud solutions, and digital transformation.
 
-We are currently exploring a potential Joint Venture (JV) / Consortium partnership for {clean_proj}.
+We are currently exploring a potential Joint Venture (JV) / Consortium partnership with your organisation to collaborate and work together for an upcoming {sec_phrase}.
+
+{scope_text}
 
 Considering your organisation's expertise and experience, we believe there may be valuable opportunities for collaboration in the joint submission and implementation of this assignment, subject to the applicable procurement requirements.
 
 If your organisation is interested in exploring this partnership opportunity, we kindly request you to share the following documents for our preliminary evaluation:
 
 • Company Profile – Highlighting your organisation's technical capabilities, core competencies, and areas of expertise.
+
 • Company Registration Certificate – Valid documentation confirming the legal registration of your organisation.
+
 • Tax Registration Certificate – Applicable tax registration documents issued by the relevant authorities.
+
 • CVs of Key Experts – Profiles of qualified professionals with expertise relevant to the proposed assignment.
+
 • Relevant Project Experience – Details of similar completed or ongoing projects, including project descriptions, scope of work, client details, and your organisation's role.
 
 Upon receiving and reviewing the above documents, we would be pleased to discuss the proposed collaboration structure and share a draft Joint Venture / Consortium Agreement for your review and mutual consideration.
@@ -1825,11 +2098,9 @@ Upon receiving and reviewing the above documents, we would be pleased to discuss
 We look forward to your positive response and the opportunity to establish a mutually beneficial partnership.
 
 Thanks & Regards,
-Farhath Bakka | Business Development Executive
-GISFY Support & Partnerships Team
+{contact_name}
 GISFY Private Limited, Ground Floor, DSL Abacus IT Park,
 Uppal, Hyderabad, Telangana – 500039, India
-Email: farhath@gisfy.co.in | support@gisfy.co.in
 Mobile: +91 90631 20678
 Website: www.gisfy.co.in
 """
@@ -1861,9 +2132,9 @@ Website: www.gisfy.co.in
 
     # Fallback to team members only if no recipients were provided
     if not recipients:
-        recipients = ["farhath@gisfy.co.in"]
+        recipients = ["support@gisfy.co.in"]
 
-    target_partner_email = (partner.email or (recipients[0] if recipients else "farhath@gisfy.co.in")).strip()
+    target_partner_email = (partner.email or (recipients[0] if recipients else "support@gisfy.co.in")).strip()
 
     # Step 5 Rolling 24-hour Quota Check (Max 50)
     from app.services.collaboration_scheduler import collaboration_scheduler
@@ -1886,9 +2157,9 @@ Website: www.gisfy.co.in
         body_text=letter_text,
         partner_name=partner.name,
         cc_email="bidding@gisfy.co.in",
-        from_name="Farhath Bakka & GISFY Support",
-        from_email="farhath@gisfy.co.in, support@gisfy.co.in",
-        reply_to="farhath@gisfy.co.in, support@gisfy.co.in",
+        from_name=contact_name,
+        from_email=contact_email,
+        reply_to=contact_email,
         lock_key=lock_key
     )
 
@@ -1925,6 +2196,12 @@ Website: www.gisfy.co.in
         "provider_status_code": dispatch_res.get("provider_status_code"),
         "sent_folder_verified": dispatch_res.get("sent_folder_verified", False),
         "from_address": from_address,
+        "sender_email": contact_email,
+        "sender_name": contact_name,
+        "preferred_client": "outlook" if is_adb else "gmail",
+        "gmail_web_url": dispatch_res.get("gmail_web_url"),
+        "outlook_web_url": dispatch_res.get("outlook_web_url"),
+        "is_adb": is_adb,
         "recipients": [target_partner_email],
         "cc_recipients": ["bidding@gisfy.co.in"],
         "partner_name": partner.name,
@@ -1941,9 +2218,11 @@ Website: www.gisfy.co.in
 
 
 def get_collaboration_stats(db: Session) -> Dict[str, Any]:
-    """Return summary analytics for collaboration partners."""
+    """Return summary analytics for collaboration partners separated by 29 States and ADB."""
     ensure_partners_seeded(db)
     total_partners = db.query(models.Partner).count()
+    state_partners_count = db.query(models.Partner).filter(models.Partner.category == "STATE").count()
+    adb_partners_count = db.query(models.Partner).filter(models.Partner.category == "ADB").count()
     total_collabs = db.query(models.TenderCollaboration).count()
     
     # Active domains
@@ -1955,6 +2234,8 @@ def get_collaboration_stats(db: Session) -> Dict[str, Any]:
 
     return {
         "total_partners": total_partners,
+        "state_partners_count": state_partners_count,
+        "adb_partners_count": adb_partners_count,
         "total_domains": len(domain_list),
         "domains": domain_list,
         "active_collaborations": total_collabs,
@@ -1975,7 +2256,7 @@ def auto_dispatch_collaboration_email_for_tender(db: Session, tender_id: int) ->
 
     try:
         res = search_partners_for_tender(db=db, tender_id=tender_id, min_score=80.0)
-        partners = res.get("matched_partners", [])
+        partners = res.get("partners") or res.get("matched_partners", [])
         if not partners:
             return None
 
@@ -1983,13 +2264,16 @@ def auto_dispatch_collaboration_email_for_tender(db: Session, tender_id: int) ->
         partner_email = top_partner.get("email")
         recipients = [partner_email] if partner_email else []
 
+        tender_obj = db.query(models.Tender).filter(models.Tender.id == tender_id).first()
+        is_adb = bool(tender_obj and ((tender_obj.state and "adb" in tender_obj.state.name.lower()) or (tender_obj.tender_id and str(tender_obj.tender_id).upper().startswith("ADB"))))
+
         payload = schemas.CollaborationEmailDispatchRequest(
             tender_id=tender_id,
             partner_id=top_partner["id"],
             proposed_jv_split="60% Lead Bidder (GISFY) : 40% Specialized Partner",
             recipients=recipients,
-            gisfy_contact_name="Farhath Bakka | Business Development Executive",
-            gisfy_contact_email="farhath@gisfy.co.in",
+            gisfy_contact_name="GISFY Support Team" if is_adb else "GISFY Bidding Operations Team",
+            gisfy_contact_email="support@gisfy.co.in" if is_adb else "bidding.gisfy@gmail.com",
             custom_message=f"Automated JV matching: {top_partner['name']} selected with {top_partner.get('match_score', 95)}% compatibility score."
         )
         dispatch_result = send_collaboration_outreach_email(db, payload)

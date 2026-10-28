@@ -9,11 +9,19 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.models import models
-from app.services.collaboration_email_service import collaboration_email_service
+from app.services.collaboration_email_service import (
+    collaboration_email_service,
+    resolve_sender_details,
+    build_collaboration_email_text,
+    build_collaboration_email_html
+)
 from app.services.collaboration_scheduler import collaboration_scheduler
 from app.services.collaboration_excel_tracker import generate_collaboration_excel_workbook
 from app.services.gmail_connector import gmail_connector
 
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 router = APIRouter()
 
 class GmailConfigPayload(BaseModel):
@@ -56,22 +64,35 @@ class GenerateDraftsPayload(BaseModel):
     min_match_score: Optional[float] = 75.0
     max_partners_per_tender: Optional[int] = 3
 
+class UpdateDraftSenderPayload(BaseModel):
+    sender_email: str
+    sender_name: Optional[str] = None
+
 
 @router.get("/dashboard")
-def get_collaboration_dashboard(db: Session = Depends(get_db)):
+def get_collaboration_dashboard(scope: Optional[str] = Query(None), db: Session = Depends(get_db)):
     """Return comprehensive dashboard data for the partner outreach automation pipeline."""
     summary = collaboration_email_service.get_dashboard_summary(db)
     scheduler_status = collaboration_scheduler.get_status()
 
-    # Recent pending drafts across all states and ADB
-    pending_drafts = db.query(models.CollaborationEmail).filter(
+    # Query pending drafts and recent sent with optional scope filtering
+    pending_q = db.query(models.CollaborationEmail).filter(
         models.CollaborationEmail.status.in_(["draft", "pending_approval"])
-    ).order_by(models.CollaborationEmail.id.desc()).limit(300).all()
-
-    # Recent dispatched emails
-    recent_sent = db.query(models.CollaborationEmail).filter(
+    )
+    sent_q = db.query(models.CollaborationEmail).filter(
         models.CollaborationEmail.status.in_(["sent", "replied", "failed"])
-    ).order_by(models.CollaborationEmail.id.desc()).limit(30).all()
+    )
+
+    if scope and scope.strip() and scope.upper() != "ALL":
+        if scope.lower() == "adb":
+            pending_q = pending_q.filter(models.CollaborationEmail.scope == "adb")
+            sent_q = sent_q.filter(models.CollaborationEmail.scope == "adb")
+        elif scope.lower() in ["state", "states"]:
+            pending_q = pending_q.filter(models.CollaborationEmail.scope == "state")
+            sent_q = sent_q.filter(models.CollaborationEmail.scope == "state")
+
+    pending_drafts = pending_q.order_by(models.CollaborationEmail.id.asc()).limit(300).all()
+    recent_sent = sent_q.order_by(models.CollaborationEmail.id.desc()).limit(30).all()
 
     # Recent logs
     logs = db.query(models.CollaborationWorkflowLog).order_by(
@@ -80,11 +101,30 @@ def get_collaboration_dashboard(db: Session = Depends(get_db)):
 
     def serialize_email(e):
         t = e.tender
+        p = e.partner
+        is_adb = bool(e.scope == "adb" or (t and t.state and "adb" in t.state.name.lower()) or (t and t.tender_id and t.tender_id.upper().startswith("ADB")))
+        scope = "adb" if is_adb else "state"
+        scope_label = "🌐 ADB Multilateral" if is_adb else f"🏛️ 29 States ({t.state.name if t and t.state else 'Domestic'})"
+        sender_email = e.sender_email or ("support@gisfy.co.in" if is_adb else "bidding.gisfy@gmail.com")
+        sender_name = e.sender_name or "N C Harika | Business Development Executive"
+        from_address = f"{sender_name} <{sender_email}>"
+        preferred_client = "outlook" if is_adb else "gmail"
+
         return {
             "id": e.id,
             "tender_id": t.tender_id if t else None,
             "tender_title": t.title if t else None,
             "state_name": t.state.name if (t and t.state) else None,
+            "scope": scope,
+            "scope_label": scope_label,
+            "is_adb": is_adb,
+            "sender_email": sender_email,
+            "sender_name": sender_name,
+            "from_address": from_address,
+            "preferred_client": preferred_client,
+            "partner_category": getattr(p, "category", "STATE") if p else ("ADB" if is_adb else "STATE"),
+            "partner_country": (getattr(p, "country", None) or getattr(p, "state", None)) if p else ("Regional" if is_adb else "India"),
+            "partner_state": p.state if p else None,
             "company_name": e.company_name,
             "recipient_name": e.recipient_name,
             "recipient_email": e.recipient_email,
@@ -137,6 +177,7 @@ def get_collaboration_dashboard(db: Session = Depends(get_db)):
 @router.get("/drafts")
 def list_collaboration_drafts(
     status: Optional[str] = Query(None, description="Filter by status ('draft', 'approved', 'sent', etc.)"),
+    scope: Optional[str] = Query(None, description="Filter by scope: 'state' (29 Indian States), 'adb' (Asian Development Bank), or 'all'"),
     state_name: Optional[str] = Query(None, description="Filter by state name or 'ADB - Asian Development Bank'"),
     tender_id: Optional[int] = Query(None),
     partner_id: Optional[int] = Query(None),
@@ -152,21 +193,47 @@ def list_collaboration_drafts(
         q = q.filter(models.CollaborationEmail.tender_id == tender_id)
     if partner_id:
         q = q.filter(models.CollaborationEmail.partner_id == partner_id)
+
+    if scope and scope.strip() and scope.upper() != "ALL":
+        if scope.lower() == "adb":
+            q = q.filter(models.CollaborationEmail.scope == "adb")
+        elif scope.lower() in ["state", "states"]:
+            q = q.filter(models.CollaborationEmail.scope == "state")
+
     if state_name and state_name.strip() and state_name.upper() != "ALL":
         q = q.join(models.Tender).join(models.State).filter(models.State.name.ilike(f"%{state_name.strip()}%"))
 
-    records = q.order_by(models.CollaborationEmail.id.desc()).offset(skip).limit(limit).all()
+    records = q.order_by(models.CollaborationEmail.id.asc()).offset(skip).limit(limit).all()
 
     results = []
     for r in records:
         t = r.tender
         p = r.partner
+        is_adb = bool(r.scope == "adb" or (t and t.state and "adb" in t.state.name.lower()) or (t and t.tender_id and t.tender_id.upper().startswith("ADB")))
+        scope_val = "adb" if is_adb else "state"
+        scope_label = "🌐 ADB Multilateral" if is_adb else f"🏛️ 29 States ({t.state.name if t and t.state else 'Domestic'})"
+
+        sender_email = r.sender_email or ("support@gisfy.co.in" if is_adb else "bidding.gisfy@gmail.com")
+        sender_name = r.sender_name or "N C Harika | Business Development Executive"
+        from_address = f"{sender_name} <{sender_email}>"
+        preferred_client = "outlook" if is_adb else "gmail"
+
         results.append({
             "id": r.id,
             "tender_id": t.tender_id if t else None,
             "tender_db_id": r.tender_id,
             "tender_title": t.title if t else None,
             "state_name": t.state.name if (t and t.state) else None,
+            "scope": scope_val,
+            "scope_label": scope_label,
+            "is_adb": is_adb,
+            "sender_email": sender_email,
+            "sender_name": sender_name,
+            "from_address": from_address,
+            "preferred_client": preferred_client,
+            "partner_category": getattr(p, "category", "STATE") if p else ("ADB" if is_adb else "STATE"),
+            "partner_country": (getattr(p, "country", None) or getattr(p, "state", None)) if p else ("Regional" if is_adb else "India"),
+            "partner_state": p.state if p else None,
             "submission_deadline": t.last_date.strftime("%d %b %Y") if (t and t.last_date) else None,
             "partner_id": r.partner_id,
             "company_name": r.company_name,
@@ -205,7 +272,22 @@ def preview_draft_html(id: int, db: Session = Depends(get_db)):
     record = db.query(models.CollaborationEmail).filter(models.CollaborationEmail.id == id).first()
     if not record:
         raise HTTPException(status_code=404, detail="Collaboration email record not found")
-    return HTMLResponse(content=record.body_html)
+    html_content = record.body_html or ""
+    if "{{GISFY_LOGO_SRC}}" in html_content:
+        from app.services.collaboration_email_service import get_gisfy_logo_src
+        html_content = html_content.replace("{{GISFY_LOGO_SRC}}", get_gisfy_logo_src())
+    return HTMLResponse(content=html_content)
+
+
+@router.get("/gisfy_logo.png")
+@router.get("/logo.png")
+def get_gisfy_logo_file():
+    """Serve authentic high-resolution GISFY corporate logo PNG."""
+    from fastapi.responses import FileResponse
+    png_path = BASE_DIR / "storage" / "gisfy_logo.png"
+    if png_path.exists():
+        return FileResponse(png_path, media_type="image/png")
+    raise HTTPException(status_code=404, detail="Logo not found")
 
 
 @router.post("/generate-drafts")
@@ -295,26 +377,47 @@ def send_draft_now_endpoint(id: int, db: Session = Depends(get_db)):
 
     db.refresh(draft)
     import urllib.parse
+
+    is_adb = bool(
+        draft.scope == "adb"
+        or (draft.subject and "[ADB" in draft.subject)
+        or (draft.body_text and "ASIAN DEVELOPMENT BANK" in draft.body_text)
+    )
+    s_info = resolve_sender_details(is_adb=is_adb, sender_email=draft.sender_email, sender_name=draft.sender_name)
+    sender_email = s_info["email"]
+    sender_name = s_info["name"]
+    from_address = f"{sender_name} <{sender_email}>"
+
     clean_cc = "bidding@gisfy.co.in"
+    full_body = draft.body_text or ""
+
     quoted_sub = urllib.parse.quote(draft.subject or "")
-    quoted_body = urllib.parse.quote(draft.body_text or "")
+    quoted_body = urllib.parse.quote(full_body)
     quoted_cc = urllib.parse.quote(clean_cc)
+    to_with_cc = f"{draft.recipient_email}?cc={clean_cc}"
+    quoted_to_with_cc = urllib.parse.quote(to_with_cc)
+
     mailto_url = f"mailto:{draft.recipient_email}?cc={quoted_cc}&subject={quoted_sub}&body={quoted_body}"
-    outlook_web_url = f"https://outlook.office.com/mail/deeplink/compose?to={draft.recipient_email}&cc={quoted_cc}&subject={quoted_sub}&body={quoted_body}"
+    outlook_web_url = f"https://outlook.office.com/mail/{sender_email}/deeplink/compose?to={quoted_to_with_cc}&cc={quoted_cc}&subject={quoted_sub}&body={quoted_body}"
+    gmail_web_url = f"https://mail.google.com/mail/u/bidding.gisfy@gmail.com/?view=cm&fs=1&authuser=bidding.gisfy@gmail.com&to={draft.recipient_email}&cc={quoted_cc}&su={quoted_sub}&body={quoted_body}"
 
     return {
         "status": draft.status,
         "message": message,
         "recipient": draft.recipient_email,
         "company": draft.company_name,
-        "from_address": "Farhath Bakka <farhath@gisfy.co.in>, GISFY Support <support@gisfy.co.in>",
+        "from_address": from_address,
+        "sender_email": sender_email,
+        "sender_name": sender_name,
+        "preferred_client": "outlook" if is_adb else "gmail",
         "cc": clean_cc,
         "provider": draft.provider,
         "provider_status_code": draft.provider_status_code,
         "sent_folder_verified": draft.sent_folder_verified,
         "delivery_verified": draft.delivery_verified,
         "mailto_url": mailto_url,
-        "outlook_web_url": outlook_web_url
+        "outlook_web_url": outlook_web_url,
+        "gmail_web_url": gmail_web_url
     }
 
 
@@ -337,6 +440,70 @@ def reject_draft_endpoint(
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@router.post("/drafts/{id}/switch-sender")
+@router.post("/drafts/{id}/update-sender")
+def switch_draft_sender_endpoint(
+    id: int,
+    payload: UpdateDraftSenderPayload,
+    db: Session = Depends(get_db)
+):
+    """
+    Switch the authorized sender for an outreach draft.
+    For ADB proposals, users can switch between:
+    - support@gisfy.co.in (GISFY Support Team)
+    - farhath@gisfy.co.in (Farhath - ADB Partnerships)
+    - firza@gisfy.co.in (Firza - Multilateral Lead)
+    Updates sender_email, sender_name, and re-renders body_text and body_html signatures.
+    """
+    draft = db.query(models.CollaborationEmail).filter(models.CollaborationEmail.id == id).first()
+    if not draft:
+        raise HTTPException(status_code=404, detail="Draft not found")
+
+    t = draft.tender
+    is_adb = bool(draft.scope == "adb" or (t and t.state and "adb" in t.state.name.lower()))
+    
+    s_email = payload.sender_email.strip().lower()
+    s_info = resolve_sender_details(is_adb=is_adb, sender_email=s_email, sender_name=payload.sender_name)
+    s_name = s_info["name"]
+    
+    draft.sender_email = s_info["email"]
+    draft.sender_name = s_name
+
+    state_name = t.state.name if (t and t.state) else ("ADB Multilateral" if is_adb else "Domestic")
+    
+    draft.body_text = build_collaboration_email_text(
+        project_name=draft.project_name or (t.title if t else "Project Assignment"),
+        project_overview=draft.project_overview,
+        state_name=state_name,
+        is_adb=is_adb,
+        sender_name=s_name,
+        sender_email=draft.sender_email
+    )
+    draft.body_html = build_collaboration_email_html(
+        project_name=draft.project_name or (t.title if t else "Project Assignment"),
+        project_overview=draft.project_overview,
+        state_name=state_name,
+        is_adb=is_adb,
+        sender_name=s_name,
+        sender_email=draft.sender_email,
+        subject_line=draft.subject
+    )
+
+    db.commit()
+    db.refresh(draft)
+
+    return {
+        "status": "success",
+        "draft_id": draft.id,
+        "sender_email": draft.sender_email,
+        "sender_name": draft.sender_name,
+        "from_address": f"{draft.sender_name} <{draft.sender_email}>",
+        "body_text": draft.body_text,
+        "body_html": draft.body_html,
+        "message": f"Sender successfully updated to {draft.sender_name} <{draft.sender_email}>."
+    }
+
+
 @router.post("/trigger-daily-cycle")
 def trigger_daily_cycle_endpoint():
     """Manually trigger the 9:00 AM IST daily collaboration workflow cycle now."""
@@ -348,9 +515,92 @@ def trigger_daily_cycle_endpoint():
     }
 
 
+class ScheduleTimePayload(BaseModel):
+    schedule_time: Optional[str] = None
+    states_schedule_time: Optional[str] = None
+    adb_schedule_time: Optional[str] = None
+    adb_rotation_quota: Optional[int] = None
+    auto_send_enabled: Optional[bool] = None
+    window_start: Optional[str] = None
+    window_end: Optional[str] = None
+
+
+@router.post("/scheduler/trigger-states")
+def trigger_states_dispatch_endpoint(batch_limit: Optional[int] = Query(None)):
+    """
+    Trigger the 29 Indian States 09:30 AM dispatch immediately.
+    Sends through bidding.gisfy@gmail.com (N C Harika | Business Development Executive, CC: bidding@gisfy.co.in).
+    """
+    summary = collaboration_scheduler.execute_states_dispatch(batch_limit=batch_limit)
+    return {
+        "status": "completed",
+        "message": f"Dispatched {summary.get('dispatched_count', 0)} 29 States outreach emails from bidding.gisfy@gmail.com.",
+        "summary": summary
+    }
+
+
+@router.post("/scheduler/trigger-adb")
+def trigger_adb_rotation_dispatch_endpoint(quota: int = 50):
+    """
+    Trigger the ADB Multilateral 10:30 AM 50-quota rotation dispatch immediately.
+    Sequence: 50 via support@gisfy.co.in -> 50 via farhath@gisfy.co.in -> 50 via firza@gisfy.co.in.
+    """
+    summary = collaboration_scheduler.execute_adb_rotation_dispatch(quota_per_sender=quota)
+    return {
+        "status": "completed",
+        "message": f"Completed ADB rotation: {summary.get('total_dispatched', 0)} emails dispatched across support (50), farhath (50), firza (50).",
+        "summary": summary
+    }
+
+
+@router.post("/update-schedule-time")
+def update_schedule_time_endpoint(
+    payload: Optional[ScheduleTimePayload] = None,
+    time: Optional[str] = Query(None),
+    schedule_time: Optional[str] = Query(None),
+    states_time: Optional[str] = Query(None),
+    adb_time: Optional[str] = Query(None),
+    adb_quota: Optional[int] = Query(None),
+    auto_send_enabled: Optional[bool] = Query(None),
+    window_start: Optional[str] = Query(None),
+    window_end: Optional[str] = Query(None)
+):
+    """
+    Dynamically update the automated email outreach schedule times for 29 States and ADB.
+    Reschedules APScheduler jobs immediately and persists to scheduler_config.json.
+    """
+    s_time = states_time or time or schedule_time
+    a_time = adb_time
+    quota = adb_quota
+    auto_send = auto_send_enabled
+    w_start = window_start
+    w_end = window_end
+
+    if payload:
+        s_time = payload.states_schedule_time or payload.schedule_time or s_time
+        a_time = payload.adb_schedule_time or a_time
+        quota = payload.adb_rotation_quota or quota
+        auto_send = payload.auto_send_enabled if payload.auto_send_enabled is not None else auto_send
+        w_start = payload.window_start or w_start
+        w_end = payload.window_end or w_end
+
+    try:
+        res = collaboration_scheduler.set_schedules(
+            states_time=s_time,
+            adb_time=a_time,
+            adb_quota=quota,
+            auto_send_enabled=auto_send,
+            window_start=w_start,
+            window_end=w_end
+        )
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update schedules: {e}")
+
+
 @router.get("/scheduler-status")
 def get_scheduler_status_endpoint():
-    """Return status and next run time of the 9:00 AM IST daily scheduler."""
+    """Return status and next run time of the daily dynamic scheduler."""
     return collaboration_scheduler.get_status()
 
 
@@ -361,6 +611,7 @@ def toggle_auto_send_endpoint(enabled: bool = Query(...)):
     Requires explicit user authorization.
     """
     collaboration_email_service.auto_send_enabled = enabled
+    collaboration_scheduler.save_config()
     return {
         "status": "ok",
         "auto_send_enabled": collaboration_email_service.auto_send_enabled,
@@ -588,8 +839,8 @@ def initiate_m365_device_flow_endpoint(
     tenant_id: Optional[str] = Query(None)
 ):
     """
-    Step 2: Initiate Microsoft MSAL Device Code Flow for Farhath's mailbox.
-    Purges previous Swethanjali session and starts a clean device code authentication session.
+    Step 2: Initiate Microsoft MSAL Device Code Flow for Support mailbox.
+    Purges previous session and starts a clean device code authentication session.
     """
     from app.services.live_email_provider import live_email_provider
     try:
@@ -631,7 +882,7 @@ def get_m365_auth_url_endpoint(
 ):
     """
     Generate the Microsoft Entra OAuth 2.0 authorization URL for delegated user sign-in.
-    Pre-populates login_hint for farhath@gisfy.co.in.
+    Pre-populates login_hint for support@gisfy.co.in.
     """
     from app.services.live_email_provider import live_email_provider
     try:
@@ -734,8 +985,8 @@ def m365_oauth_callback_endpoint(
 </html>"""
         return HTMLResponse(content=html_fail, status_code=400)
 
-    user_email = result.get("user_email", "farhath@gisfy.co.in")
-    display_name = result.get("display_name", "Farhath Bakka")
+    user_email = result.get("user_email", "support@gisfy.co.in")
+    display_name = result.get("display_name", "GISFY Support Team")
 
     html_success = f"""<!DOCTYPE html>
 <html>
@@ -811,7 +1062,7 @@ def disconnect_m365_endpoint():
 def send_test_email_endpoint(payload: TestEmailPayload, db: Session = Depends(get_db)):
     """
     Requirement 8: Send exactly one test email to an approved recipient.
-    Must verify delivery to recipient, CC (bidding@gisfy.co.in), and Farhath's Sent folder.
+    Must verify delivery to recipient, CC (bidding@gisfy.co.in), and Sent folder.
     Do not display a successful dispatch message unless the email provider has actually accepted the message.
     """
     from app.services.live_email_provider import live_email_provider, DEFAULT_CC_EMAIL, DEFAULT_SENDER_NAME, DEFAULT_SENDER_EMAIL, DEFAULT_REPLY_TO
@@ -840,7 +1091,7 @@ def send_test_email_endpoint(payload: TestEmailPayload, db: Session = Depends(ge
         body_text="Test email verification",
         body_html="<p>Test email verification</p>",
         project_name="Live Email Verification Test",
-        project_overview="Verification of delivery to recipient, CC (bidding@gisfy.co.in), and Farhath's Sent folder.",
+        project_overview="Verification of delivery to recipient, CC (bidding@gisfy.co.in), and Sent folder.",
         status=status_label,
         approval_status="approved",
         is_draft=False,
@@ -893,7 +1144,7 @@ def send_test_email_endpoint(payload: TestEmailPayload, db: Session = Depends(ge
 @router.post("/verify-sent-folder/{id}")
 def verify_sent_folder_endpoint(id: int, db: Session = Depends(get_db)):
     """
-    Step 4: Independently verify if an email is present in Farhath's Sent folder
+    Step 4: Independently verify if an email is present in Sent folder
     and transition status to 'Found in Sent Items'.
     """
     from app.services.live_email_provider import live_email_provider
@@ -905,7 +1156,7 @@ def verify_sent_folder_endpoint(id: int, db: Session = Depends(get_db)):
         return {
             "verified": True,
             "status": "Found in Sent Items",
-            "message": "Already verified in Farhath's Sent folder.",
+            "message": "Already verified in Sent folder.",
             "sent_folder_verified": True
         }
 
@@ -913,7 +1164,7 @@ def verify_sent_folder_endpoint(id: int, db: Session = Depends(get_db)):
     if record.provider == "microsoft_graph":
         ok, token, err = live_email_provider._get_m365_access_token()
         if ok and token:
-            verified = live_email_provider.verify_m365_sent_folder(token, "farhath@gisfy.co.in", record.subject)
+            verified = live_email_provider.verify_m365_sent_folder(token, record.sender_email or "support@gisfy.co.in", record.subject)
     elif record.provider == "google_workspace":
         verified = True  # Google Workspace API natively saves sent messages into Sent
     elif record.provider == "authenticated_smtp":
@@ -934,12 +1185,12 @@ def verify_sent_folder_endpoint(id: int, db: Session = Depends(get_db)):
         return {
             "verified": True,
             "status": "Found in Sent Items",
-            "message": "Message independently confirmed in Farhath's Sent folder (saveToSentItems verified).",
+            "message": "Message independently confirmed in Sent folder (saveToSentItems verified).",
             "sent_folder_verified": True
         }
     else:
         return {
             "verified": False,
             "status": record.status,
-            "message": "Message not yet detected in Farhath's Sent folder or sync in progress."
+            "message": "Message not yet detected in Sent folder or sync in progress."
         }

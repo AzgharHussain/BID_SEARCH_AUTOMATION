@@ -36,13 +36,14 @@ def get_gisfy_logo_base64() -> str:
                     return f"data:image/png;base64,{b64}"
             except Exception:
                 pass
-    return "https://gisfy.co.in/images/logo.png"
+    return "http://127.0.0.1:8000/api/collaboration/gisfy_logo.png"
 
 DEFAULT_TEAM_MEMBERS = [
-    {"email": "farhath@gisfy.co.in", "name": "Farhath Bakka (GISFY)", "role": "Business Development Executive & Lead", "added_at": "2026-10-23T15:00:00"},
-    {"email": "swethanjali@gisfy.co.in", "name": "Swethanjali (GISFY)", "role": "Executive Lead & Verifier", "added_at": "2026-10-20T21:55:00"},
+    {"email": "support@gisfy.co.in", "name": "GISFY Support Team", "role": "ADB Support & Multilateral Outreach", "added_at": "2026-10-24T21:42:00"},
+    {"email": "farhath@gisfy.co.in", "name": "Farhath (GISFY ADB Partnerships)", "role": "International Alliances & ADB Operations", "added_at": "2026-10-28T10:00:00"},
+    {"email": "firza@gisfy.co.in", "name": "Firza (GISFY Multilateral Lead)", "role": "Multilateral Proposals & Strategic JV Lead", "added_at": "2026-10-28T10:00:00"},
     {"email": "bidding@gisfy.co.in", "name": "GISFY Bidding Operations", "role": "Mandatory CC & Proposals Ops", "added_at": "2026-10-23T15:00:00"},
-    {"email": "swethagisfy@gmail.com", "name": "Swetha (GISFY)", "role": "Executive Reviewer & Lead", "added_at": "2026-10-16T15:47:00"},
+    {"email": "bidding.gisfy@gmail.com", "name": "GISFY Bidding Operations", "role": "State Outreach & Operations", "added_at": "2026-10-16T15:47:00"},
     {"email": "proposals-team@gisfy.co.in", "name": "GISFY Proposals Team", "role": "Bidding Team", "added_at": "2026-10-15T12:00:00"},
     {"email": "tenders@gisfy.co.in", "name": "GISFY Tender Ops", "role": "Procurement Lead", "added_at": "2026-10-15T12:00:00"},
     {"email": "director.projects@gisfy.co.in", "name": "Project Director", "role": "Executive Review", "added_at": "2026-10-15T12:00:00"}
@@ -128,7 +129,7 @@ def remove_team_member(email: str) -> List[Dict[str, Any]]:
 def build_state_keyword_digest_email_html(
     report_data: List[Dict[str, Any]],
     custom_notes: Optional[str] = None,
-    recipient_email: str = "swethagisfy@gmail.com",
+    recipient_email: str = "bidding.gisfy@gmail.com",
     base_app_url: str = "http://localhost:5173",
     base_api_url: str = "http://127.0.0.1:8000"
 ) -> str:
@@ -464,13 +465,13 @@ def build_state_email_html(
     return build_state_keyword_digest_email_html(
         report_data=report_data,
         custom_notes=custom_notes,
-        recipient_email="swethagisfy@gmail.com"
+        recipient_email="bidding.gisfy@gmail.com"
     )
 
 
 def build_new_proposal_alert_email_html(
     tender_data: Dict[str, Any],
-    recipient_email: str = "swethagisfy@gmail.com",
+    recipient_email: str = "bidding.gisfy@gmail.com",
     base_app_url: str = "http://localhost:5173",
     base_api_url: str = "http://127.0.0.1:8000"
 ) -> str:
@@ -589,7 +590,7 @@ def send_automatic_new_proposal_alert(tender_data: Dict[str, Any], recipient: Op
         if em and em.lower() not in [r.lower() for r in recipients]:
             recipients.append(em)
     if not recipients:
-        recipients = ["swethagisfy@gmail.com"]
+        recipients = ["bidding.gisfy@gmail.com"]
 
     sname = tender_data.get("state_name", "State Portal")
     kw = tender_data.get("keyword", "GIS")
@@ -623,7 +624,7 @@ def send_state_keyword_digest(
     team_members = get_team_members()
     target_recipients = recipients or [m["email"] for m in team_members if m.get("email")]
     if not target_recipients:
-        target_recipients = ["swethagisfy@gmail.com"]
+        target_recipients = ["bidding.gisfy@gmail.com"]
 
     subject = "[GISFY Proposal Intelligence] Executive State & Keyword Procurement Report with Downloadable Documents"
     html_content = build_state_keyword_digest_email_html(
@@ -657,7 +658,7 @@ def _dispatch_html_email(
     smtp_port = int(os.getenv("SMTP_PORT", 587))
     smtp_user = os.getenv("SMTP_USER")
     smtp_password = os.getenv("SMTP_PASSWORD")
-    from_addr = from_address or os.getenv("SMTP_FROM") or (f"Farhath Bakka <{smtp_user}>" if smtp_user else "Farhath Bakka <farhath@gisfy.co.in>")
+    from_addr = from_address or os.getenv("SMTP_FROM") or (f"GISFY Support <{smtp_user}>" if smtp_user else "GISFY Support <support@gisfy.co.in>")
 
     msg = MIMEMultipart("mixed")
     msg["Subject"] = subject
@@ -866,7 +867,7 @@ def save_smtp_config(
     return get_smtp_status()
 
 
-def test_smtp_connection(target_email: str = "farhath@gisfy.co.in") -> Dict[str, Any]:
+def test_smtp_connection(target_email: str = "support@gisfy.co.in") -> Dict[str, Any]:
     """Send an immediate test verification email to target_email with mandatory CC."""
     reload_smtp_env()
     smtp_host = os.getenv("SMTP_HOST")
@@ -913,8 +914,8 @@ def build_collaboration_email_html(
     letter_text: str,
     jv_split: str,
     custom_notes: Optional[str] = None,
-    gisfy_name: str = "Farhath Bakka | Business Development Executive",
-    gisfy_email: str = "farhath@gisfy.co.in",
+    gisfy_name: str = "N C Harika | Business Development Executive",
+    gisfy_email: str = "support@gisfy.co.in",
     cc_email: str = "bidding@gisfy.co.in"
 ) -> str:
     """Generate executive HTML email for Joint Venture / Consortium Collaboration LOI."""
@@ -1020,11 +1021,11 @@ def build_collaboration_email_html(
 
                                     <!-- Official Corporate Signature Block -->
                                     <div style="margin-top: 6px; padding-top: 6px; font-size: 13.5px; color: #374151; line-height: 1.6;">
-                                        <div style="font-weight: 700; font-size: 15px; color: #0f172a;">Farhath Bakka <span style="font-weight: 400; color: #64748b;">| Business Development Executive</span></div>
+                                        <div style="font-weight: 700; font-size: 15px; color: #0f172a;">N C Harika | Business Development Executive</div>
                                         <div style="color: #475569; margin-top: 2px;">GISFY Private Limited, Ground Floor, DSL Abacus IT Park,</div>
                                         <div style="color: #475569;">Uppal, Hyderabad, Telangana – 500039, India</div>
                                         <div style="color: #475569; margin-top: 4px;"><b>Mobile:</b> <a href="tel:+919063120678" style="color: #4f46e5; text-decoration: none;">+91 90631 20678</a></div>
-                                        <div style="color: #475569;"><b>Website:</b> <a href="http://www.gisfy.co.in" target="_blank" style="color: #4f46e5; text-decoration: none;">www.gisfy.co.in</a></div>
+                                        <div style="color: #475569;"><b>Website:</b> <a href="https://www.gisfy.co.in" target="_blank" style="color: #4f46e5; text-decoration: none;">www.gisfy.co.in</a></div>
                                         <div style="margin-top: 14px;">
                                             <img src="{logo_src}" alt="GISFY Logo" style="height: 48px; max-width: 180px; object-fit: contain; display: block;" />
                                         </div>

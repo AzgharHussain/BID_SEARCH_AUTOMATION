@@ -41,8 +41,15 @@ export default function PartnerOutreachTab({ API_BASE, showToast }) {
   const [actionLoading, setActionLoading] = useState(false);
   const [subTab, setSubTab] = useState('drafts'); // 'drafts' | 'sent' | 'logs'
   const [previewDraft, setPreviewDraft] = useState(null);
+  const [selectedScopeFilter, setSelectedScopeFilter] = useState('ALL'); // 'ALL' | 'STATE' | 'ADB'
   const [selectedStateFilter, setSelectedStateFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 40;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedScopeFilter, selectedStateFilter, searchQuery, subTab]);
 
   // Live Provider Status
   const [providerStatus, setProviderStatus] = useState(null);
@@ -58,7 +65,7 @@ export default function PartnerOutreachTab({ API_BASE, showToast }) {
   const [testResult, setTestResult] = useState(null);
   const [verifyingSentId, setVerifyingSentId] = useState(null);
 
-  // MSAL Device Code Flow State (Delegated Sign-in for farhath@gisfy.co.in)
+  // MSAL Device Code Flow State (Delegated Sign-in for support@gisfy.co.in)
   const [deviceFlow, setDeviceFlow] = useState(null);
   const [deviceFlowPolling, setDeviceFlowPolling] = useState(false);
   const [startingDeviceFlow, setStartingDeviceFlow] = useState(false);
@@ -68,6 +75,18 @@ export default function PartnerOutreachTab({ API_BASE, showToast }) {
   const [dnsLoading, setDnsLoading] = useState(false);
   const [copiedSpf, setCopiedSpf] = useState(false);
   const [copiedDkim, setCopiedDkim] = useState(false);
+
+  // Dynamic Scheduler Configuration State
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [statesTimeInput, setStatesTimeInput] = useState('09:30');
+  const [adbTimeInput, setAdbTimeInput] = useState('10:30');
+  const [adbQuotaInput, setAdbQuotaInput] = useState(50);
+  const [scheduleTimeInput, setScheduleTimeInput] = useState('09:30');
+  const [windowStartInput, setWindowStartInput] = useState('09:00');
+  const [windowEndInput, setWindowEndInput] = useState('18:00');
+  const [savingSchedule, setSavingSchedule] = useState(false);
+  const [triggeringStates, setTriggeringStates] = useState(false);
+  const [triggeringAdb, setTriggeringAdb] = useState(false);
 
   // Forms for providers
   const [gmailForm, setGmailForm] = useState({
@@ -109,7 +128,7 @@ export default function PartnerOutreachTab({ API_BASE, showToast }) {
   const [smtpForm, setSmtpForm] = useState({
     host: 'smtp.office365.com',
     port: 587,
-    user: 'farhath@gisfy.co.in',
+    user: 'support@gisfy.co.in',
     password: '',
     imap_host: 'outlook.office365.com'
   });
@@ -162,6 +181,27 @@ export default function PartnerOutreachTab({ API_BASE, showToast }) {
     fetchProviderStatus();
   }, []);
 
+  useEffect(() => {
+    if (dashboard?.scheduler?.states_schedule?.time) {
+      setStatesTimeInput(dashboard.scheduler.states_schedule.time);
+    }
+    if (dashboard?.scheduler?.adb_schedule?.time) {
+      setAdbTimeInput(dashboard.scheduler.adb_schedule.time);
+    }
+    if (dashboard?.scheduler?.adb_schedule?.rotation_quota_per_sender) {
+      setAdbQuotaInput(dashboard.scheduler.adb_schedule.rotation_quota_per_sender);
+    }
+    if (dashboard?.scheduler?.schedule_time) {
+      setScheduleTimeInput(dashboard.scheduler.schedule_time);
+    }
+    if (dashboard?.scheduler?.window_start) {
+      setWindowStartInput(dashboard.scheduler.window_start);
+    }
+    if (dashboard?.scheduler?.window_end) {
+      setWindowEndInput(dashboard.scheduler.window_end);
+    }
+  }, [dashboard?.scheduler]);
+
   const handleApprove = async (id) => {
     setActionLoading(true);
     try {
@@ -178,39 +218,100 @@ export default function PartnerOutreachTab({ API_BASE, showToast }) {
     }
   };
 
-  const handleOpenOutlook = (draft) => {
+  const handleCopyEmail = async (draft) => {
+    if (!draft) return;
+    try {
+      if (navigator.clipboard && window.ClipboardItem && draft.body_html) {
+        const blobHtml = new Blob([draft.body_html], { type: 'text/html' });
+        const blobText = new Blob([draft.body_text || ''], { type: 'text/plain' });
+        await navigator.clipboard.write([
+          new window.ClipboardItem({
+            'text/html': blobHtml,
+            'text/plain': blobText
+          })
+        ]);
+        if (showToast) showToast('📋 Formatted proposal with GISFY Logo copied to clipboard!', 'success');
+      } else {
+        await navigator.clipboard.writeText(draft.body_text || '');
+        if (showToast) showToast('📋 Proposal text copied to clipboard!', 'success');
+      }
+    } catch (err) {
+      if (showToast) showToast('Failed to copy to clipboard: ' + err.message, 'error');
+    }
+  };
+
+  const handleOpenClient = (draft) => {
     if (!draft) return;
     const recipient = draft.recipient_email || '';
     const subject = draft.subject || '';
-    const body = draft.body_text || '';
+    const composeBody = draft.body_text || '';
     const ccEmails = 'bidding@gisfy.co.in';
-    const outlookWebUrl = `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(recipient)}&cc=${encodeURIComponent(ccEmails)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    window.open(outlookWebUrl, '_blank');
-    if (showToast) {
-      showToast(`📬 Microsoft Outlook opened for ${draft.company_name} from Farhath & Support (CC: bidding@gisfy.co.in)!`, 'success');
+    const isAdb = draft.scope === 'adb' || draft.is_adb || (draft.state_name || '').toLowerCase().includes('adb');
+
+    // Automatically copy mandatory CC to clipboard for instant pasting if web client drops it
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(ccEmails);
+      }
+    } catch (e) {
+      console.warn('Clipboard write error', e);
+    }
+
+    if (isAdb) {
+      // Dynamic routing to specific mailbox (support@gisfy.co.in, farhath@gisfy.co.in, or firza@gisfy.co.in)
+      const senderEmail = draft.sender_email || 'support@gisfy.co.in';
+      const sLower = senderEmail.toLowerCase();
+      let senderName = 'N C Harika | Business Development Executive';
+      if (sLower.includes('farhath')) {
+        senderName = 'Farhath | Business Development Executive';
+      } else if (sLower.includes('firza') || sLower.includes('irza')) {
+        senderName = 'Firza | Business Development Executive';
+      } else {
+        senderName = 'N C Harika | Business Development Executive';
+      }
+
+      // Query-in-query format + explicit cc parameter to maximize OWA compatibility
+      const toWithCc = recipient ? `${recipient}?cc=${ccEmails}` : '';
+      const outlookWebUrl = `https://outlook.office.com/mail/${senderEmail}/deeplink/compose?to=${encodeURIComponent(toWithCc)}&cc=${encodeURIComponent(ccEmails)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(composeBody)}`;
+      window.open(outlookWebUrl, '_blank');
+      if (showToast) {
+        showToast(`📬 Microsoft Outlook opened from ${senderName} <${senderEmail}>! CC (${ccEmails}) copied to clipboard.`, 'success');
+      }
+    } else {
+      // Explicitly route to bidding.gisfy@gmail.com account in Gmail
+      const gmailWebUrl = `https://mail.google.com/mail/u/bidding.gisfy@gmail.com/?view=cm&fs=1&authuser=bidding.gisfy@gmail.com&to=${encodeURIComponent(recipient)}&cc=${encodeURIComponent(ccEmails)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(composeBody)}`;
+      window.open(gmailWebUrl, '_blank');
+      if (showToast) {
+        showToast(`✉️ Gmail opened from N C Harika <bidding.gisfy@gmail.com> (CC: ${ccEmails})!`, 'success');
+      }
     }
   };
+
+  const handleOpenOutlook = handleOpenClient;
 
   const handleSend = async (id) => {
     setActionLoading(true);
 
-    // Look up the draft to trigger Microsoft Outlook Web / PWA directly (NOT Apple Mail!)
+    // Look up the draft to trigger Microsoft Outlook Web (for ADB) or Gmail Web (for 29 States)
     const targetDraft = drafts.find(d => d.id === id) || (previewDraft && previewDraft.id === id ? previewDraft : null);
     if (targetDraft) {
-      const recipient = targetDraft.recipient_email || '';
-      const subject = targetDraft.subject || '';
-      const body = targetDraft.body_text || '';
-      const ccEmails = 'bidding@gisfy.co.in';
-      const outlookWebUrl = `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(recipient)}&cc=${encodeURIComponent(ccEmails)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-      window.open(outlookWebUrl, '_blank');
+      handleOpenClient(targetDraft);
     }
 
     try {
       const res = await fetch(`${API_BASE}/api/collaboration/drafts/${id}/send`, { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
+        const isAdb = (data.scope === 'adb' || data.is_adb || targetDraft?.scope === 'adb' || targetDraft?.is_adb);
         if (showToast) {
-          showToast(`📬 Microsoft Outlook opened for ${data.recipient || targetDraft?.recipient_email || 'partner'} from Farhath & Support (CC: bidding@gisfy.co.in)! Click 'Send' in Outlook to deliver.`, 'success');
+          if (isAdb) {
+            const senderEmail = data.sender_email || targetDraft?.sender_email || 'support@gisfy.co.in';
+            const sLower = senderEmail.toLowerCase();
+            const senderName = sLower.includes('farhath') ? 'Farhath | Business Development Executive' : (sLower.includes('firza') || sLower.includes('irza') ? 'Firza | Business Development Executive' : 'N C Harika | Business Development Executive');
+            showToast(`📬 Microsoft Outlook opened for ${data.recipient || targetDraft?.recipient_email || 'partner'} from ${senderName} <${senderEmail}> (CC: bidding@gisfy.co.in)! Click 'Send' in Outlook to complete delivery.`, 'success');
+          } else {
+            showToast(`✉️ Gmail opened for ${data.recipient || targetDraft?.recipient_email || 'partner'} from N C Harika | Business Development Executive <bidding.gisfy@gmail.com> (CC: bidding@gisfy.co.in)! Click 'Send' in Gmail to complete delivery.`, 'success');
+          }
         }
         fetchDashboard();
         fetchDrafts();
@@ -222,7 +323,7 @@ export default function PartnerOutreachTab({ API_BASE, showToast }) {
         if (showToast) showToast(`❌ Notice: ${msg}`, 'error');
       }
     } catch (err) {
-      if (showToast) showToast('Opened in Microsoft Outlook. Click Send to complete delivery.', 'info');
+      if (showToast) showToast('Opened in webmail client. Click Send to complete delivery.', 'info');
     } finally {
       setActionLoading(false);
     }
@@ -279,13 +380,93 @@ export default function PartnerOutreachTab({ API_BASE, showToast }) {
     try {
       const res = await fetch(`${API_BASE}/api/collaboration/toggle-pause?paused=${pause}`, { method: 'POST' });
       if (res.ok) {
+        const timeLabel = dashboard?.scheduler?.formatted_schedule_time || 'Outreach';
         if (showToast) {
-          showToast(pause ? '⏸️ Daily 9:00 AM IST Scheduler Paused' : '▶️ Daily 9:00 AM IST Scheduler Resumed', 'info');
+          showToast(pause ? `⏸️ Daily ${timeLabel} Scheduler Paused` : `▶️ Daily ${timeLabel} Scheduler Resumed`, 'info');
         }
         fetchDashboard();
       }
     } catch (err) {
       if (showToast) showToast('Failed to toggle scheduler', 'error');
+    }
+  };
+
+  const handleUpdateScheduleTime = async (newStatesTime, newAdbTime, newQuota, newWindowStart, newWindowEnd) => {
+    setSavingSchedule(true);
+    try {
+      const payload = {
+        states_schedule_time: newStatesTime || statesTimeInput,
+        adb_schedule_time: newAdbTime || adbTimeInput,
+        adb_rotation_quota: newQuota || adbQuotaInput,
+        schedule_time: newStatesTime || statesTimeInput,
+        window_start: newWindowStart || windowStartInput,
+        window_end: newWindowEnd || windowEndInput
+      };
+      const res = await fetch(`${API_BASE}/api/collaboration/update-schedule-time`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (showToast) {
+          showToast(`⏰ Schedules updated: 29 States (${payload.states_schedule_time} IST) & ADB (${payload.adb_schedule_time} IST)!`, 'success');
+        }
+        setShowScheduleModal(false);
+        fetchDashboard();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        if (showToast) showToast(err.detail || 'Failed to update schedules', 'error');
+      }
+    } catch (err) {
+      if (showToast) showToast('Failed to update schedule: ' + err.message, 'error');
+    } finally {
+      setSavingSchedule(false);
+    }
+  };
+
+  const handleTriggerStates = async () => {
+    setTriggeringStates(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/collaboration/scheduler/trigger-states?batch_limit=50`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (showToast) {
+          showToast(`⚡ Dispatched ${data.summary?.dispatched_count || 0} 29 States outreach emails via bidding.gisfy@gmail.com!`, 'success');
+        }
+        fetchDashboard();
+        fetchDrafts();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        if (showToast) showToast(err.detail || 'Failed to trigger 29 States outreach', 'error');
+      }
+    } catch (err) {
+      if (showToast) showToast('Trigger error: ' + err.message, 'error');
+    } finally {
+      setTriggeringStates(false);
+    }
+  };
+
+  const handleTriggerAdb = async () => {
+    setTriggeringAdb(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/collaboration/scheduler/trigger-adb?quota=50`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        const total = data.summary?.total_dispatched || 0;
+        if (showToast) {
+          showToast(`🌐 Completed ADB 50-quota rotation: ${total} emails sent across support (50), farhath (50), firza (50)!`, 'success');
+        }
+        fetchDashboard();
+        fetchDrafts();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        if (showToast) showToast(err.detail || 'Failed to trigger ADB rotation', 'error');
+      }
+    } catch (err) {
+      if (showToast) showToast('Trigger error: ' + err.message, 'error');
+    } finally {
+      setTriggeringAdb(false);
     }
   };
 
@@ -388,7 +569,7 @@ export default function PartnerOutreachTab({ API_BASE, showToast }) {
               setDeviceFlow(prev => ({ ...(prev || {}), expires_in_seconds: data.expires_in_seconds }));
             }
           }
-        } catch (e) {}
+        } catch (e) { }
       }, 3000);
     }
     return () => {
@@ -422,7 +603,7 @@ export default function PartnerOutreachTab({ API_BASE, showToast }) {
   const handleCancelDeviceFlow = async () => {
     try {
       await fetch(`${API_BASE}/api/collaboration/m365/device-flow/cancel`, { method: 'POST' });
-    } catch (e) {}
+    } catch (e) { }
     setDeviceFlow(null);
     setDeviceFlowPolling(false);
   };
@@ -763,7 +944,7 @@ We are an ISO-certified technology company specialising in Geographic Informatio
 We are currently exploring a potential Joint Venture (JV) / Consortium partnership for GISFY Procurement Intelligence System Verification.
 
 Assignment Overview & Technical Scope:
-End-to-end verification of Microsoft 365 Exchange Online outbound email delivery from Farhath Bakka <farhath@gisfy.co.in>, mandatory CC synchronization to bidding@gisfy.co.in, and Outlook Sent Items tracking.
+End-to-end verification of Microsoft 365 Exchange Online outbound email delivery from GISFY Support <support@gisfy.co.in>, mandatory CC synchronization to bidding@gisfy.co.in, and Outlook Sent Items tracking.
 
 Considering your organisation's expertise and experience, we believe there may be valuable opportunities for collaboration in the joint submission and implementation of this assignment, subject to the applicable procurement requirements.
 
@@ -780,17 +961,17 @@ Upon receiving and reviewing the above documents, we would be pleased to discuss
 We look forward to your positive response and the opportunity to establish a mutually beneficial partnership.
 
 Thanks & Regards,
-Farhath Bakka | Business Development Executive
+GISFY Support Team
 GISFY Support & Partnerships Team
 GISFY Private Limited, Ground Floor, DSL Abacus IT Park,
 Uppal, Hyderabad, Telangana – 500039, India
-Email: farhath@gisfy.co.in | support@gisfy.co.in
+Email: support@gisfy.co.in
 Mobile: +91 90631 20678
 Website: www.gisfy.co.in`;
 
     const ccEmails = 'bidding@gisfy.co.in';
     const mailtoUrl = `mailto:${encodeURIComponent(recipient)}?cc=${encodeURIComponent(ccEmails)}&subject=${encodeURIComponent(testSubject)}&body=${encodeURIComponent(testBody)}`;
-    const outlookWebUrl = `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(recipient)}&cc=${encodeURIComponent(ccEmails)}&subject=${encodeURIComponent(testSubject)}&body=${encodeURIComponent(testBody)}`;
+    const outlookWebUrl = `https://outlook.office.com/mail/support@gisfy.co.in/deeplink/compose?to=${encodeURIComponent(recipient)}&cc=${encodeURIComponent(ccEmails)}&subject=${encodeURIComponent(testSubject)}&body=${encodeURIComponent(testBody)}`;
 
     // If direct mail client is active, open Microsoft Outlook directly (NOT Apple Mail!)
     if (providerStatus?.active_provider === 'direct_mail') {
@@ -810,7 +991,7 @@ Website: www.gisfy.co.in`;
       if (res.ok && data.status === 'success') {
         const isGraph = data.provider === 'microsoft_graph';
         const msg = isGraph
-          ? `Microsoft 365 Exchange Online officially accepted email (HTTP ${data.provider_status_code || 202}). Checked Farhath's Outlook Sent Items.`
+          ? `Microsoft 365 Exchange Online officially accepted email (HTTP ${data.provider_status_code || 202}). Checked Outlook Sent Items.`
           : (data.provider_message || 'Test email dispatched successfully.');
 
         setTestResult({
@@ -822,7 +1003,7 @@ Website: www.gisfy.co.in`;
           test_record_id: data.test_record_id,
           recipient: data.recipient || recipient,
           cc: data.cc || ccEmails,
-          from: data.from || 'Farhath Bakka <farhath@gisfy.co.in>, GISFY Support <support@gisfy.co.in>',
+          from: data.from || 'GISFY Support <support@gisfy.co.in>',
           message: msg,
           mailto_url: mailtoUrl,
           outlook_web_url: outlookWebUrl
@@ -840,7 +1021,7 @@ Website: www.gisfy.co.in`;
           sent_folder_verified: false,
           recipient: recipient,
           cc: ccEmails,
-          from: 'Farhath Bakka <farhath@gisfy.co.in>, GISFY Support <support@gisfy.co.in>',
+          from: 'GISFY Support <support@gisfy.co.in>',
           error: errMsg,
           message: errMsg,
           mailto_url: mailtoUrl,
@@ -855,7 +1036,7 @@ Website: www.gisfy.co.in`;
         delivery_status: 'Network Error',
         recipient: recipient,
         cc: ccEmails,
-        from: 'Farhath Bakka <farhath@gisfy.co.in>, GISFY Support <support@gisfy.co.in>',
+        from: 'GISFY Support <support@gisfy.co.in>',
         error: err.message,
         message: err.message,
         mailto_url: mailtoUrl,
@@ -873,7 +1054,7 @@ Website: www.gisfy.co.in`;
       const res = await fetch(`${API_BASE}/api/collaboration/verify-sent-folder/${recordId}`, { method: 'POST' });
       const data = await res.json();
       if (res.ok && data.verified) {
-        if (showToast) showToast("✅ Independently verified in Farhath's Sent Items folder!", 'success');
+        if (showToast) showToast("✅ Independently verified in Outlook Sent Items folder!", 'success');
         fetchDrafts();
       } else {
         if (showToast) showToast(data.message || 'Message not yet detected in Sent folder.', 'info');
@@ -890,6 +1071,12 @@ Website: www.gisfy.co.in`;
   const isDraftMode = summary.draft_mode_active !== false;
 
   const matchesFilter = (d) => {
+    // 1. Separate 29 Indian States and ADB
+    if (selectedScopeFilter !== 'ALL') {
+      const isAdb = d.scope === 'adb' || d.is_adb || (d.state_name || '').toLowerCase().includes('adb');
+      if (selectedScopeFilter === 'ADB' && !isAdb) return false;
+      if (selectedScopeFilter === 'STATE' && isAdb) return false;
+    }
     if (selectedStateFilter !== 'ALL') {
       const stName = (d.state_name || '').toLowerCase();
       const target = selectedStateFilter.toLowerCase();
@@ -905,7 +1092,9 @@ Website: www.gisfy.co.in`;
       const matchComp = (d.company_name || '').toLowerCase().includes(q);
       const matchRecip = (d.recipient_name || '').toLowerCase().includes(q) || (d.recipient_email || '').toLowerCase().includes(q);
       const matchReason = (d.selection_reason || '').toLowerCase().includes(q);
-      if (!matchTitle && !matchComp && !matchRecip && !matchReason) return false;
+      const matchSubj = (d.subject || '').toLowerCase().includes(q);
+      const matchCountry = (d.partner_country || '').toLowerCase().includes(q);
+      if (!matchTitle && !matchComp && !matchRecip && !matchReason && !matchSubj && !matchCountry) return false;
     }
     return true;
   };
@@ -916,6 +1105,10 @@ Website: www.gisfy.co.in`;
   const sentEmailsList = drafts
     .filter(d => ['sent', 'Provider Accepted', 'Found in Sent Items', 'Delivery Confirmed', 'replied', 'failed', 'Failed', 'bounced'].includes(d.status) || d.is_test_email)
     .filter(matchesFilter);
+
+  const totalPages = Math.ceil((subTab === 'drafts' ? pendingDraftsList.length : sentEmailsList.length) / PAGE_SIZE) || 1;
+  const paginatedPendingDrafts = pendingDraftsList.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const paginatedSentEmails = sentEmailsList.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   const renderStatusBadge = (status, sentFolderVerified) => {
     const s = String(status || '').toLowerCase();
@@ -935,7 +1128,7 @@ Website: www.gisfy.co.in`;
     }
     if (s === 'found in sent items' || (s === 'sent' && sentFolderVerified)) {
       return (
-        <span className="outreach-status-pill" style={{ background: '#e0e7ff', color: '#4338ca', border: '1px solid #c7d2fe', fontWeight: 700 }} title="Verified present in Farhath's Outlook Sent Items folder">
+        <span className="outreach-status-pill" style={{ background: '#e0e7ff', color: '#4338ca', border: '1px solid #c7d2fe', fontWeight: 700 }} title="Verified present in Outlook Sent Items folder">
           📁 Found in Sent Items
         </span>
       );
@@ -977,18 +1170,18 @@ Website: www.gisfy.co.in`;
             <span>⏰</span>
             <span>Schedule: <strong>Daily 09:00 AM – 05:30 PM IST (Mon-Fri)</strong></span>
             <span>•</span>
-            <span>Sender / From: <strong>Farhath Bakka &lt;farhath@gisfy.co.in&gt;, GISFY Support &lt;support@gisfy.co.in&gt;</strong></span>
+            <span>Sender / From: <strong>GISFY Support &lt;support@gisfy.co.in&gt;</strong></span>
             <span>•</span>
             <span>Mandatory CC: <strong>bidding@gisfy.co.in</strong></span>
             <span>•</span>
-            <span>Reply-To: <strong>farhath@gisfy.co.in, support@gisfy.co.in</strong></span>
+            <span>Reply-To: <strong>support@gisfy.co.in</strong></span>
             <span>•</span>
             <span>Daily Quota: <strong>Max 50 Emails / Rolling 24h</strong></span>
           </div>
         </div>
 
         <div className="outreach-header-actions">
-          <button 
+          <button
             className="outreach-btn-primary"
             onClick={handleTriggerCycle}
             disabled={actionLoading}
@@ -997,7 +1190,7 @@ Website: www.gisfy.co.in`;
             <span>⚡</span> {actionLoading ? 'Running Workflow...' : 'Trigger 9:00 AM Cycle Now'}
           </button>
 
-          <a 
+          <a
             href={`${API_BASE}/api/collaboration/export-excel`}
             download="GISFY_Partner_Collaboration_Tracker.xlsx"
             className="outreach-btn-secondary"
@@ -1006,7 +1199,7 @@ Website: www.gisfy.co.in`;
             <span>📥</span> Export Tracker (.xlsx)
           </a>
 
-          <button 
+          <button
             className="outreach-btn-secondary"
             onClick={() => setShowTestModal(true)}
             title="Send exactly one test email to user-approved recipient to verify delivery and Sent folder"
@@ -1015,7 +1208,7 @@ Website: www.gisfy.co.in`;
             <span>🧪</span> Send Approved Test Email
           </button>
 
-          <button 
+          <button
             className="outreach-btn-secondary"
             onClick={() => setShowConfigModal(true)}
             title="Configure Microsoft 365 OAuth 2.0 / Google / SMTP"
@@ -1023,7 +1216,7 @@ Website: www.gisfy.co.in`;
             <span>⚙️</span> Live Provider Setup
           </button>
 
-          <button 
+          <button
             className="outreach-btn-secondary"
             onClick={handleCheckReplies}
             disabled={actionLoading}
@@ -1077,9 +1270,16 @@ Website: www.gisfy.co.in`;
                 Zero 3rd-Party Keys Required ✅
               </span>
             </div>
-            <div style={{ fontSize: '0.78rem', color: '#475569', marginTop: '0.2rem' }}>
-              From: <b>Farhath Bakka &lt;farhath@gisfy.co.in&gt;, GISFY Support &lt;support@gisfy.co.in&gt;</b> | CC: <b>bidding@gisfy.co.in</b> | Reply-To: <b>farhath@gisfy.co.in, support@gisfy.co.in</b> | 
-              <span style={{ color: '#047857', fontWeight: 600 }}> Delivery: <b>Direct to Client, Bidding &amp; Support Team Inbox + Sent Items</b></span>
+            <div style={{ fontSize: '0.78rem', color: '#475569', marginTop: '0.2rem', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              <div>
+                🌐 <b>ADB Mails:</b> From: <b>GISFY Support &lt;support@gisfy.co.in&gt;</b> (via Outlook) | CC: <b>bidding@gisfy.co.in</b>
+              </div>
+              <div>
+                🏛️ <b>29 States Mails:</b> From: <b>GISFY Bidding Operations &lt;bidding.gisfy@gmail.com&gt;</b> (via Gmail) | CC: <b>bidding@gisfy.co.in</b>
+              </div>
+              <div style={{ color: '#047857', fontWeight: 600, marginTop: '2px' }}>
+                Delivery: <b>Direct to Client Inbox, CC &amp; Sent Items Tracking Active</b> ✅
+              </div>
             </div>
           </div>
         </div>
@@ -1138,11 +1338,13 @@ Website: www.gisfy.co.in`;
       <div className="outreach-kpi-grid">
         <div className="outreach-kpi-card">
           <div className="outreach-kpi-top">
-            <span className="outreach-kpi-label">Partners Analyzed</span>
+            <span className="outreach-kpi-label">Partners Directory</span>
             <span className="outreach-kpi-icon">🏢</span>
           </div>
           <div className="outreach-kpi-val">{summary.total_partners || 105}</div>
-          <div className="outreach-kpi-sub">Verified Indian enterprises</div>
+          <div className="outreach-kpi-sub" style={{ fontSize: '0.74rem', color: '#4338ca', fontWeight: 600 }}>
+            🏛️ {summary.state_partners_count || 68} States • 🌐 {summary.adb_partners_count || 37} ADB
+          </div>
         </div>
 
         <div className="outreach-kpi-card" style={{ borderColor: '#fde68a' }}>
@@ -1151,7 +1353,9 @@ Website: www.gisfy.co.in`;
             <span className="outreach-kpi-icon" style={{ background: '#fef3c7' }}>📝</span>
           </div>
           <div className="outreach-kpi-val" style={{ color: '#b45309' }}>{summary.drafts_prepared || pendingDraftsList.length}</div>
-          <div className="outreach-kpi-sub">Draft-only mode active</div>
+          <div className="outreach-kpi-sub" style={{ fontSize: '0.74rem', color: '#b45309', fontWeight: 600 }}>
+            🏛️ {summary.states_drafts_count || 2132} States • 🌐 {summary.adb_drafts_count || 1004} ADB
+          </div>
         </div>
 
         {/* Step 5: Rolling 24-hour Daily Quota Card */}
@@ -1215,7 +1419,7 @@ Website: www.gisfy.co.in`;
         </div>
       </div>
 
-      {/* 4. Workflow Operational Controls Bar with Stop Automation and Pilot Mode */}
+      {/* 4. Workflow Operational Controls Bar with Dynamic Schedule, Stop Automation and Pilot Mode */}
       <div className="outreach-controls-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         <div className="outreach-controls-left" style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0f172a' }}>Operating Mode:</span>
@@ -1224,34 +1428,122 @@ Website: www.gisfy.co.in`;
           </span>
 
           <label className="outreach-toggle-switch" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: 600 }}>
-            <input 
-              type="checkbox" 
+            <input
+              type="checkbox"
               checked={!isDraftMode}
               onChange={(e) => handleToggleAutoSend(e.target.checked)}
               style={{ cursor: 'pointer', width: '16px', height: '16px' }}
             />
-            <span>Authorize Scheduled 9:00 AM Dispatch</span>
+            <span>Authorize Scheduled {scheduler.formatted_schedule_time || 'Daily'} Dispatch</span>
           </label>
 
           <span style={{ color: '#cbd5e1' }}>|</span>
 
-          {/* Pilot Mode Toggle */}
-          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: 600, color: '#475569' }}>
-            <input 
-              type="checkbox"
-              checked={scheduler.pilot_mode !== false}
-              onChange={(e) => handleTogglePilotMode(e.target.checked)}
-              style={{ cursor: 'pointer', width: '16px', height: '16px' }}
-            />
-            <span>Pilot Mode (Cap at 5/day)</span>
-          </label>
+          {/* Dual Schedule Badges */}
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            {/* 29 States Schedule Badge */}
+            <div
+              onClick={() => setShowScheduleModal(true)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: '#f0fdf4',
+                padding: '3px 9px',
+                borderRadius: '8px',
+                border: '1.5px solid #22c55e',
+                boxShadow: '0 1px 3px rgba(34, 197, 94, 0.1)',
+                cursor: 'pointer'
+              }}
+              title="29 Indian States Outreach: Everyday at 09:30 AM IST via bidding.gisfy@gmail.com. Click to configure."
+            >
+              <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#15803d' }}>
+                🇮🇳 29 States: <strong>{scheduler.states_schedule?.formatted_time || '09:30 AM IST'}</strong>
+              </span>
+              <span style={{ fontSize: '0.72rem', color: '#166534', background: '#dcfce7', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>
+                bidding.gisfy@gmail.com
+              </span>
+            </div>
+
+            {/* ADB Multilateral Schedule Badge */}
+            <div
+              onClick={() => setShowScheduleModal(true)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: '#eff6ff',
+                padding: '3px 9px',
+                borderRadius: '8px',
+                border: '1.5px solid #3b82f6',
+                boxShadow: '0 1px 3px rgba(59, 130, 246, 0.1)',
+                cursor: 'pointer'
+              }}
+              title="ADB Multilateral: Everyday at 10:30 AM IST (50 support -> 50 farhath -> 50 firza). Click to configure."
+            >
+              <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#1d4ed8' }}>
+                🌐 ADB: <strong>{scheduler.adb_schedule?.formatted_time || '10:30 AM IST'}</strong>
+              </span>
+              <span style={{ fontSize: '0.72rem', color: '#1e40af', background: '#dbeafe', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>
+                50-Quota Rotation (support ➔ farhath ➔ firza)
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowScheduleModal(true)}
+              style={{
+                background: '#4f46e5',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                padding: '4px 10px',
+                fontSize: '0.76rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}
+              title="Configure schedules, senders, and rotation tranches"
+            >
+              ⚙️ Manage Schedules
+            </button>
+          </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
-            Window: <strong>09:00 AM – 05:30 PM IST</strong> ({scheduler.within_business_window ? '🟢 Active' : '⏸️ Closed'})
+            Window: <strong>{scheduler.formatted_window || '09:00 AM – 05:30 PM IST'}</strong> ({scheduler.within_business_window ? '🟢 Active' : '⏸️ Closed'})
           </span>
-          <button 
+          {scheduler.next_run_time_ist && (
+            <span style={{ fontSize: '0.76rem', color: '#334155', background: '#f1f5f9', padding: '3px 8px', borderRadius: '6px', fontWeight: 600 }}>
+              Next: <strong>{new Date(scheduler.next_run_time_ist).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} IST</strong>
+            </span>
+          )}
+          <button
+            type="button"
+            className="outreach-act-btn"
+            disabled={triggeringStates}
+            onClick={handleTriggerStates}
+            style={{ fontWeight: 700, background: '#f0fdf4', color: '#166534', border: '1px solid #86efac' }}
+            title="Dispatch 29 States emails immediately via bidding.gisfy@gmail.com without waiting for 09:30 AM"
+          >
+            {triggeringStates ? '⏳ Sending 29 States...' : '⚡ Send 29 States (09:30 AM) Now'}
+          </button>
+
+          <button
+            type="button"
+            className="outreach-act-btn"
+            disabled={triggeringAdb}
+            onClick={handleTriggerAdb}
+            style={{ fontWeight: 700, background: '#eff6ff', color: '#1e40af', border: '1px solid #93c5fd' }}
+            title="Dispatch ADB rotation (50 support -> 50 farhath -> 50 firza) immediately without waiting for 10:30 AM"
+          >
+            {triggeringAdb ? '⏳ Sending ADB Rotation...' : '🌐 Send ADB 50-Rotation (10:30 AM) Now'}
+          </button>
+
+          <button
             className="outreach-act-btn"
             onClick={() => handleTogglePause(!scheduler.is_paused)}
             style={{ fontWeight: 700 }}
@@ -1292,19 +1584,19 @@ Website: www.gisfy.co.in`;
           </div>
 
           <div className="outreach-subnav">
-            <button 
+            <button
               className={`outreach-subnav-btn ${subTab === 'drafts' ? 'active' : ''}`}
               onClick={() => setSubTab('drafts')}
             >
               📝 Drafts Pending Review ({pendingDraftsList.length})
             </button>
-            <button 
+            <button
               className={`outreach-subnav-btn ${subTab === 'sent' ? 'active' : ''}`}
               onClick={() => setSubTab('sent')}
             >
               📤 Sent &amp; Follow-up Tracker ({sentEmailsList.length})
             </button>
-            <button 
+            <button
               className={`outreach-subnav-btn ${subTab === 'logs' ? 'active' : ''}`}
               onClick={() => setSubTab('logs')}
             >
@@ -1313,8 +1605,36 @@ Website: www.gisfy.co.in`;
           </div>
         </div>
 
-        {/* Jurisdiction & Keyword Search Filter Bar */}
+        {/* Scope Toggle & Jurisdiction & Keyword Search Filter Bar */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center', padding: '1rem 1.5rem', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+          {/* Scope Segmented Control: 29 States vs ADB */}
+          <div className="scope-toggle-group">
+            <button
+              type="button"
+              className={`scope-toggle-btn all ${selectedScopeFilter === 'ALL' ? 'active' : ''}`}
+              onClick={() => { setSelectedScopeFilter('ALL'); setSelectedStateFilter('ALL'); }}
+              title="Show all proposals across 29 Indian States and ADB Multilateral"
+            >
+              🌐 All Proposals
+            </button>
+            <button
+              type="button"
+              className={`scope-toggle-btn states ${selectedScopeFilter === 'STATE' ? 'active' : ''}`}
+              onClick={() => { setSelectedScopeFilter('STATE'); if (selectedStateFilter === 'ADB') setSelectedStateFilter('ALL'); }}
+              title="Filter exclusively for 29 Indian States public tenders and domestic consortiums"
+            >
+              🏛️ 29 Indian States ({summary.states_drafts_count || 2140})
+            </button>
+            <button
+              type="button"
+              className={`scope-toggle-btn adb ${selectedScopeFilter === 'ADB' ? 'active' : ''}`}
+              onClick={() => { setSelectedScopeFilter('ADB'); setSelectedStateFilter('ALL'); }}
+              title="Filter exclusively for Asian Development Bank (ADB) multilateral projects"
+            >
+              🌐 ADB Multilateral ({summary.adb_drafts_count || 1004})
+            </button>
+          </div>
+
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#334155' }}>🏛️ Jurisdiction:</span>
             <select
@@ -1354,7 +1674,7 @@ Website: www.gisfy.co.in`;
               }}
             />
             {searchQuery && (
-              <button 
+              <button
                 onClick={() => setSearchQuery('')}
                 style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', color: '#94a3b8' }}
               >
@@ -1412,17 +1732,24 @@ Website: www.gisfy.co.in`;
                     </td>
                   </tr>
                 ) : (
-                  pendingDraftsList.map(draft => (
+                  paginatedPendingDrafts.map(draft => (
                     <tr key={draft.id}>
                       <td>
                         <div className="outreach-tender-cell">
-                          <span className="outreach-tender-id">TENDER #{draft.tender_id || 'REF'}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
+                            <span className="outreach-tender-id">TENDER #{draft.tender_id || 'REF'}</span>
+                            {draft.is_adb || draft.scope === 'adb' || (draft.state_name || '').includes('ADB') ? (
+                              <span className="scope-pill-badge adb">🌐 ADB Multilateral</span>
+                            ) : (
+                              <span className="scope-pill-badge state">🏛️ 29 States Tender</span>
+                            )}
+                          </div>
                           <span className="outreach-tender-title" title={draft.tender_title}>
                             {draft.tender_title ? (draft.tender_title.length > 60 ? draft.tender_title.substring(0, 60) + '...' : draft.tender_title) : 'Tender Assignment'}
                           </span>
-                          <span style={{ 
-                            fontSize: '0.75rem', 
-                            color: (draft.state_name || '').includes('ADB') ? '#0284c7' : '#475569', 
+                          <span style={{
+                            fontSize: '0.75rem',
+                            color: (draft.state_name || '').includes('ADB') ? '#0284c7' : '#475569',
                             fontWeight: 600,
                             display: 'inline-flex',
                             alignItems: 'center',
@@ -1431,14 +1758,58 @@ Website: www.gisfy.co.in`;
                             {(draft.state_name || '').includes('ADB') ? '🌐 ' : '📍 '}
                             {draft.state_name || 'Pan-India'}
                           </span>
+                          {draft.subject && (
+                            <div style={{
+                              marginTop: '6px',
+                              fontSize: '0.74rem',
+                              color: '#1e293b',
+                              background: '#f8fafc',
+                              padding: '4px 7px',
+                              borderRadius: '4px',
+                              border: '1px solid #e2e8f0',
+                              lineHeight: 1.35
+                            }} title={`Email Subject: ${draft.subject}`}>
+                              <span style={{ color: '#0369a1', fontWeight: 700 }}>✉️ Subject: </span>
+                              <span>{draft.subject}</span>
+                            </div>
+                          )}
                         </div>
                       </td>
 
                       <td>
                         <div className="outreach-partner-cell">
-                          <span className="outreach-partner-name">{draft.company_name}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                            <span className="outreach-partner-name">{draft.company_name}</span>
+                            {draft.partner_category === 'ADB' || draft.is_adb || draft.scope === 'adb' ? (
+                              <span className="partner-cat-pill adb">ADB Consultant</span>
+                            ) : (
+                              <span className="partner-cat-pill state">State Partner</span>
+                            )}
+                            {draft.partner_country && (
+                              <span style={{ fontSize: '0.72rem', fontWeight: 700, background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', padding: '1px 6px', borderRadius: '4px' }}>
+                                🌍 {draft.partner_country}
+                              </span>
+                            )}
+                          </div>
                           <span className="outreach-partner-contact">{draft.recipient_name}</span>
                           <span style={{ fontSize: '0.78rem', color: '#2563eb' }}>{draft.recipient_email}</span>
+                          <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              background: (draft.scope === 'adb' || draft.is_adb) ? '#eff6ff' : '#f0fdf4',
+                              color: (draft.scope === 'adb' || draft.is_adb) ? '#0284c7' : '#15803d',
+                              border: `1px solid ${(draft.scope === 'adb' || draft.is_adb) ? '#bae6fd' : '#bbf7d0'}`,
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}>
+                              <span>{(draft.scope === 'adb' || draft.is_adb) ? '📬 Outlook From:' : '✉️ Gmail From:'}</span>
+                              <span style={{ fontWeight: 800 }}>{draft.sender_email || ((draft.scope === 'adb' || draft.is_adb) ? 'support@gisfy.co.in' : 'bidding.gisfy@gmail.com')}</span>
+                            </span>
+                          </div>
                         </div>
                       </td>
 
@@ -1460,7 +1831,7 @@ Website: www.gisfy.co.in`;
 
                       <td>
                         <div className="outreach-action-btns">
-                          <button 
+                          <button
                             className="outreach-act-btn"
                             onClick={() => setPreviewDraft(draft)}
                             title="Preview formatted email content"
@@ -1469,7 +1840,7 @@ Website: www.gisfy.co.in`;
                           </button>
 
                           {draft.status === 'draft' && (
-                            <button 
+                            <button
                               className="outreach-act-btn approve"
                               onClick={() => handleApprove(draft.id)}
                               disabled={actionLoading}
@@ -1479,37 +1850,66 @@ Website: www.gisfy.co.in`;
                             </button>
                           )}
 
-                          <button 
-                            className="outreach-act-btn outlook"
-                            onClick={() => handleOpenOutlook(draft)}
-                            style={{
-                              background: '#0078d4',
-                              color: '#ffffff',
-                              border: 'none',
-                              padding: '0.38rem 0.65rem',
-                              borderRadius: '6px',
-                              fontWeight: 600,
-                              fontSize: '0.78rem',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              cursor: 'pointer'
-                            }}
-                            title="Open pre-filled proposal directly in Microsoft Outlook (Web / PWA) with Farhath & CC: bidding and support"
-                          >
-                            📬 Outlook
-                          </button>
+                          {(draft.scope === 'adb' || draft.is_adb || (draft.state_name || '').toLowerCase().includes('adb')) ? (
+                            <button
+                              className="outreach-act-btn outlook"
+                              onClick={() => handleOpenClient(draft)}
+                              style={{
+                                background: '#0078d4',
+                                color: '#ffffff',
+                                border: 'none',
+                                padding: '0.38rem 0.65rem',
+                                borderRadius: '6px',
+                                fontWeight: 600,
+                                fontSize: '0.78rem',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                cursor: 'pointer'
+                              }}
+                              title={`Open pre-filled proposal in Microsoft Outlook from ${draft.sender_email || 'support@gisfy.co.in'} (CC: bidding@gisfy.co.in)`}
+                            >
+                              📬 Outlook ({draft.sender_email ? draft.sender_email.split('@')[0] : 'support'})
+                            </button>
+                          ) : (
+                            <button
+                              className="outreach-act-btn gmail"
+                              onClick={() => handleOpenClient(draft)}
+                              style={{
+                                background: '#ea4335',
+                                color: '#ffffff',
+                                border: 'none',
+                                padding: '0.38rem 0.65rem',
+                                borderRadius: '6px',
+                                fontWeight: 600,
+                                fontSize: '0.78rem',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                cursor: 'pointer'
+                              }}
+                              title="Open pre-filled proposal in Gmail from bidding.gisfy@gmail.com (CC: bidding@gisfy.co.in)"
+                            >
+                              ✉️ Gmail
+                            </button>
+                          )}
 
-                          <button 
+                          <button
                             className="outreach-act-btn send"
                             onClick={() => handleSend(draft.id)}
                             disabled={actionLoading || draft.status === 'Sending' || draft.status === 'Provider Accepted'}
-                            title="Open Microsoft Outlook and record dispatch in GISFY portal"
+                            style={{
+                              background: (draft.scope === 'adb' || draft.is_adb || (draft.state_name || '').toLowerCase().includes('adb')) ? '#0078d4' : '#ea4335',
+                              borderColor: (draft.scope === 'adb' || draft.is_adb || (draft.state_name || '').toLowerCase().includes('adb')) ? '#0078d4' : '#ea4335'
+                            }}
+                            title={`Open ${(draft.scope === 'adb' || draft.is_adb || (draft.state_name || '').toLowerCase().includes('adb')) ? 'Microsoft Outlook (support@gisfy.co.in)' : 'Gmail (bidding.gisfy@gmail.com)'} and record dispatch in GISFY portal`}
                           >
-                            {draft.status === 'Sending' ? '⏳ Sending...' : '🚀 Send in Outlook'}
+                            {draft.status === 'Sending'
+                              ? '⏳ Sending...'
+                              : ((draft.scope === 'adb' || draft.is_adb || (draft.state_name || '').toLowerCase().includes('adb')) ? '🚀 Send in Outlook' : '🚀 Send in Gmail')}
                           </button>
 
-                          <button 
+                          <button
                             className="outreach-act-btn reject"
                             onClick={() => handleReject(draft.id)}
                             title="Reject and discard draft"
@@ -1523,6 +1923,50 @@ Website: www.gisfy.co.in`;
                 )}
               </tbody>
             </table>
+            {totalPages > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.8rem 1.2rem', background: '#f8fafc', borderTop: '1px solid #e2e8f0', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ fontSize: '0.85rem', color: '#475569' }}>
+                  Showing <b>{(currentPage - 1) * PAGE_SIZE + 1}</b> – <b>{Math.min(currentPage * PAGE_SIZE, pendingDraftsList.length)}</b> of <b>{pendingDraftsList.length}</b> proposals (Page {currentPage} of {totalPages})
+                </div>
+                <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                  <button
+                    onClick={() => setCurrentPage(1)}
+                    disabled={currentPage === 1}
+                    className="outreach-act-btn"
+                    style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem', opacity: currentPage === 1 ? 0.5 : 1 }}
+                  >
+                    ⏮ First
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
+                    disabled={currentPage === 1}
+                    className="outreach-act-btn"
+                    style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem', opacity: currentPage === 1 ? 0.5 : 1 }}
+                  >
+                    ◀ Prev
+                  </button>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 700, padding: '0 6px', color: '#0f172a' }}>
+                    {currentPage} / {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
+                    disabled={currentPage === totalPages}
+                    className="outreach-act-btn"
+                    style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem', opacity: currentPage === totalPages ? 0.5 : 1 }}
+                  >
+                    Next ▶
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={currentPage === totalPages}
+                    className="outreach-act-btn"
+                    style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem', opacity: currentPage === totalPages ? 0.5 : 1 }}
+                  >
+                    Last ⏭
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1536,7 +1980,7 @@ Website: www.gisfy.co.in`;
                   <th>Tender Opportunity</th>
                   <th>Dispatched At</th>
                   <th>Delivery Status</th>
-                  <th>Sent Folder (Farhath)</th>
+                  <th>Sent Folder</th>
                   <th>Provider / Actions</th>
                 </tr>
               </thead>
@@ -1548,24 +1992,43 @@ Website: www.gisfy.co.in`;
                     </td>
                   </tr>
                 ) : (
-                  sentEmailsList.map(email => (
+                  paginatedSentEmails.map(email => (
                     <tr key={email.id}>
                       <td>
                         <div className="outreach-partner-cell">
-                          <span className="outreach-partner-name">
-                            {email.company_name}
-                            {email.is_test_email && (
-                              <span style={{ marginLeft: '6px', fontSize: '0.68rem', background: '#ede9fe', color: '#6d28d9', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>
-                                TEST EMAIL
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                            <span className="outreach-partner-name">
+                              {email.company_name}
+                              {email.is_test_email && (
+                                <span style={{ marginLeft: '6px', fontSize: '0.68rem', background: '#ede9fe', color: '#6d28d9', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>
+                                  TEST EMAIL
+                                </span>
+                              )}
+                            </span>
+                            {email.partner_category === 'ADB' || email.is_adb || email.scope === 'adb' ? (
+                              <span className="partner-cat-pill adb">ADB Consultant</span>
+                            ) : (
+                              <span className="partner-cat-pill state">State Partner</span>
+                            )}
+                            {email.partner_country && (
+                              <span style={{ fontSize: '0.72rem', fontWeight: 700, background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', padding: '1px 6px', borderRadius: '4px' }}>
+                                🌍 {email.partner_country}
                               </span>
                             )}
-                          </span>
+                          </div>
                           <span style={{ fontSize: '0.8rem', color: '#2563eb' }}>{email.recipient_email}</span>
                         </div>
                       </td>
                       <td>
                         <div className="outreach-tender-cell">
-                          <span className="outreach-tender-id">#{email.tender_id || 'TEST'}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
+                            <span className="outreach-tender-id">#{email.tender_id || 'TEST'}</span>
+                            {email.is_adb || email.scope === 'adb' || (email.state_name || '').includes('ADB') ? (
+                              <span className="scope-pill-badge adb">🌐 ADB Multilateral</span>
+                            ) : (
+                              <span className="scope-pill-badge state">🏛️ 29 States Tender</span>
+                            )}
+                          </div>
                           <span className="outreach-tender-title">{email.project_name || email.tender_title}</span>
                         </div>
                       </td>
@@ -1577,19 +2040,19 @@ Website: www.gisfy.co.in`;
                       </td>
                       <td>
                         {['brevo', 'sendgrid'].includes(email.provider) ? (
-                          <span 
-                            style={{ 
-                              color: '#047857', 
+                          <span
+                            style={{
+                              color: '#047857',
                               background: '#ecfdf5',
                               border: '1px solid #a7f3d0',
                               padding: '2px 8px',
                               borderRadius: '4px',
-                              fontWeight: 700, 
-                              fontSize: '0.75rem', 
-                              display: 'inline-flex', 
-                              alignItems: 'center', 
-                              gap: '4px' 
-                            }} 
+                              fontWeight: 700,
+                              fontSize: '0.75rem',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
                             title="Dispatched via external SMTP relay. External relays do not write to Exchange Online; message is permanently stored in the GISFY in-app sent archive."
                           >
                             📂 In-App Sent Archive
@@ -1673,6 +2136,50 @@ Website: www.gisfy.co.in`;
                 )}
               </tbody>
             </table>
+            {totalPages > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.8rem 1.2rem', background: '#f8fafc', borderTop: '1px solid #e2e8f0', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ fontSize: '0.85rem', color: '#475569' }}>
+                  Showing <b>{(currentPage - 1) * PAGE_SIZE + 1}</b> – <b>{Math.min(currentPage * PAGE_SIZE, sentEmailsList.length)}</b> of <b>{sentEmailsList.length}</b> dispatched emails (Page {currentPage} of {totalPages})
+                </div>
+                <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                  <button
+                    onClick={() => setCurrentPage(1)}
+                    disabled={currentPage === 1}
+                    className="outreach-act-btn"
+                    style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem', opacity: currentPage === 1 ? 0.5 : 1 }}
+                  >
+                    ⏮ First
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
+                    disabled={currentPage === 1}
+                    className="outreach-act-btn"
+                    style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem', opacity: currentPage === 1 ? 0.5 : 1 }}
+                  >
+                    ◀ Prev
+                  </button>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 700, padding: '0 6px', color: '#0f172a' }}>
+                    {currentPage} / {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
+                    disabled={currentPage === totalPages}
+                    className="outreach-act-btn"
+                    style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem', opacity: currentPage === totalPages ? 0.5 : 1 }}
+                  >
+                    Next ▶
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={currentPage === totalPages}
+                    className="outreach-act-btn"
+                    style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem', opacity: currentPage === totalPages ? 0.5 : 1 }}
+                  >
+                    Last ⏭
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1734,7 +2241,7 @@ Website: www.gisfy.co.in`;
                   {previewDraft.company_name} ({previewDraft.recipient_email})
                 </h3>
               </div>
-              <button 
+              <button
                 onClick={() => setPreviewDraft(null)}
                 style={{ background: 'transparent', border: 'none', color: '#ffffff', fontSize: '1.2rem', cursor: 'pointer' }}
               >
@@ -1743,35 +2250,138 @@ Website: www.gisfy.co.in`;
             </div>
 
             <div className="outreach-modal-body">
-              <div style={{ background: '#f8fafc', padding: '0.9rem 1.2rem', borderRadius: '8px', marginBottom: '1rem', border: '1px solid #e2e8f0', fontSize: '0.85rem' }}>
-                <div><strong>Subject:</strong> {previewDraft.subject}</div>
-                <div style={{ marginTop: '0.3rem' }}><strong>Recipient:</strong> {previewDraft.recipient_name} &lt;{previewDraft.recipient_email}&gt;</div>
-                <div style={{ marginTop: '0.3rem' }}><strong>CC:</strong> bidding@gisfy.co.in | <strong>From:</strong> Farhath Bakka &lt;farhath@gisfy.co.in&gt;, GISFY Support &lt;support@gisfy.co.in&gt;</div>
+              {/* Scope Ribbon Indicator */}
+              <div style={{
+                padding: '0.65rem 1.1rem',
+                borderRadius: '8px',
+                marginBottom: '0.85rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '8px',
+                background: (previewDraft.scope === 'adb' || previewDraft.is_adb || (previewDraft.state_name || '').includes('ADB')) ? '#eff6ff' : '#f0fdf4',
+                border: (previewDraft.scope === 'adb' || previewDraft.is_adb || (previewDraft.state_name || '').includes('ADB')) ? '1px solid #bfdbfe' : '1px solid #bbf7d0',
+                color: (previewDraft.scope === 'adb' || previewDraft.is_adb || (previewDraft.state_name || '').includes('ADB')) ? '#1e40af' : '#166534',
+                fontWeight: 600,
+                fontSize: '0.84rem'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>{(previewDraft.scope === 'adb' || previewDraft.is_adb || (previewDraft.state_name || '').includes('ADB')) ? '🌐' : '🏛️'}</span>
+                  <span>
+                    {(previewDraft.scope === 'adb' || previewDraft.is_adb || (previewDraft.state_name || '').includes('ADB'))
+                      ? 'Asian Development Bank (ADB) Multilateral Opportunity'
+                      : `29 Indian States Public Tender — ${previewDraft.state_name || 'State'} Jurisdiction`}
+                  </span>
+                </div>
+                <span style={{
+                  fontSize: '0.75rem',
+                  padding: '3px 9px',
+                  borderRadius: '999px',
+                  background: (previewDraft.scope === 'adb' || previewDraft.is_adb || (previewDraft.state_name || '').includes('ADB')) ? '#dbeafe' : '#dcfce7',
+                  color: (previewDraft.scope === 'adb' || previewDraft.is_adb || (previewDraft.state_name || '').includes('ADB')) ? '#1d4ed8' : '#15803d',
+                  fontWeight: 700
+                }}>
+                  {previewDraft.partner_category === 'ADB' ? 'Verified ADB International Consultant' : 'Empaneled 29 States Domestic Partner'}
+                </span>
               </div>
 
-              <iframe 
-                src={`${API_BASE}/api/collaboration/drafts/${previewDraft.id}/preview`}
+              <div style={{ background: '#f8fafc', padding: '0.9rem 1.2rem', borderRadius: '8px', marginBottom: '1rem', border: '1px solid #e2e8f0', fontSize: '0.85rem' }}>
+                <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0f172a', marginBottom: '0.4rem', lineHeight: 1.4 }}>
+                  <span style={{ color: '#475569', fontWeight: 600 }}>✉️ Subject: </span>
+                  <span>{previewDraft.subject}</span>
+                </div>
+                <div style={{ marginTop: '0.3rem' }}><strong>Recipient:</strong> {previewDraft.recipient_name} &lt;{previewDraft.recipient_email}&gt;</div>
+                <div style={{ marginTop: '0.4rem', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <strong>From:</strong>
+                  {(previewDraft.scope === 'adb' || previewDraft.is_adb || (previewDraft.state_name || '').toLowerCase().includes('adb')) ? (
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      <select
+                        value={previewDraft.sender_email || 'support@gisfy.co.in'}
+                        onChange={async (e) => {
+                          const newEmail = e.target.value;
+                          try {
+                            const res = await fetch(`${API_BASE}/api/collaboration/drafts/${previewDraft.id}/switch-sender`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ sender_email: newEmail })
+                            });
+                            if (res.ok) {
+                              const updated = await res.json();
+                              setPreviewDraft(prev => ({
+                                ...prev,
+                                sender_email: updated.sender_email,
+                                sender_name: updated.sender_name,
+                                from_address: updated.from_address,
+                                body_text: updated.body_text,
+                                body_html: updated.body_html
+                              }));
+                              setDrafts(prevDrafts => prevDrafts.map(d => d.id === previewDraft.id ? {
+                                ...d,
+                                sender_email: updated.sender_email,
+                                sender_name: updated.sender_name,
+                                from_address: updated.from_address
+                              } : d));
+                              if (showToast) showToast(`Sender switched to ${updated.from_address}!`, 'success');
+                            }
+                          } catch (err) {
+                            if (showToast) showToast('Failed to switch sender', 'error');
+                          }
+                        }}
+                        style={{
+                          fontSize: '0.82rem',
+                          fontWeight: 700,
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          border: '1px solid #0284c7',
+                          background: '#eff6ff',
+                          color: '#0369a1',
+                          cursor: 'pointer'
+                        }}
+                        title="Select authorized ADB outreach mailbox"
+                      >
+                        <option value="support@gisfy.co.in">N C Harika &lt;support@gisfy.co.in&gt;</option>
+                        <option value="farhath@gisfy.co.in">Farhath &lt;farhath@gisfy.co.in&gt;</option>
+                        <option value="firza@gisfy.co.in">Firza &lt;firza@gisfy.co.in&gt;</option>
+                      </select>
+                      <span style={{ fontSize: '0.72rem', color: '#0284c7', fontWeight: 600 }}>
+                        (Click to switch sender)
+                      </span>
+                    </div>
+                  ) : (
+                    <span>N C Harika &lt;bidding.gisfy@gmail.com&gt;</span>
+                  )}
+                  <span> | <strong>CC:</strong> bidding@gisfy.co.in</span>
+                </div>
+              </div>
+
+              <iframe
+                key={`${previewDraft.id}-${previewDraft.sender_email}`}
+                src={`${API_BASE}/api/collaboration/drafts/${previewDraft.id}/preview?t=${encodeURIComponent(previewDraft.sender_email || '')}`}
                 className="outreach-email-iframe"
                 title="Email Draft Preview"
               />
             </div>
 
-            <div style={{ padding: '1rem 1.5rem', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '0.8rem' }}>
-              <button 
-                className="outreach-act-btn" 
+            <div style={{ padding: '1rem 1.5rem', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '0.8rem', flexWrap: 'wrap' }}>
+              <button
+                className="outreach-act-btn"
                 onClick={() => setPreviewDraft(null)}
               >
                 Close Preview
               </button>
 
-              <button 
-                className="outreach-act-btn outlook"
-                onClick={() => handleOpenOutlook(previewDraft)}
+              <button
+                className="outreach-act-btn"
+                onClick={() => {
+                  navigator.clipboard.writeText('bidding@gisfy.co.in');
+                  if (showToast) showToast('📋 CC (bidding@gisfy.co.in) copied to clipboard!', 'success');
+                }}
                 style={{
-                  background: '#0078d4',
-                  color: '#ffffff',
-                  border: 'none',
-                  padding: '0.5rem 1.1rem',
+                  background: '#eff6ff',
+                  color: '#0369a1',
+                  border: '1px solid #bae6fd',
+                  padding: '0.5rem 0.9rem',
                   borderRadius: '6px',
                   fontWeight: 600,
                   fontSize: '0.85rem',
@@ -1780,12 +2390,100 @@ Website: www.gisfy.co.in`;
                   gap: '6px',
                   cursor: 'pointer'
                 }}
+                title="Copy bidding@gisfy.co.in to clipboard for CC field"
               >
-                📬 Open in Outlook
+                📋 Copy CC
               </button>
 
+              <button
+                className="outreach-act-btn"
+                onClick={() => handleCopyEmail(previewDraft)}
+                style={{
+                  background: '#f1f5f9',
+                  color: '#334155',
+                  border: '1px solid #cbd5e1',
+                  padding: '0.5rem 1rem',
+                  borderRadius: '6px',
+                  fontWeight: 600,
+                  fontSize: '0.85rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  cursor: 'pointer'
+                }}
+                title="Copy formatted email proposal with GISFY Logo to clipboard"
+              >
+                📋 Copy Email Body
+              </button>
+
+              <a
+                href={`mailto:${encodeURIComponent(previewDraft.recipient_email || '')}?cc=${encodeURIComponent('bidding@gisfy.co.in')}&subject=${encodeURIComponent(previewDraft.subject || '')}&body=${encodeURIComponent(previewDraft.body_text || '')}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="outreach-act-btn"
+                style={{
+                  background: '#059669',
+                  color: '#ffffff',
+                  textDecoration: 'none',
+                  padding: '0.5rem 1rem',
+                  borderRadius: '6px',
+                  fontWeight: 600,
+                  fontSize: '0.85rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+                title="Open in Desktop Outlook, Windows Mail, or Mac Mail with CC: bidding@gisfy.co.in automatically filled"
+              >
+                ✉️ Desktop Mail (With CC)
+              </a>
+
+              {(previewDraft.scope === 'adb' || previewDraft.is_adb || (previewDraft.state_name || '').toLowerCase().includes('adb')) ? (
+                <button
+                  className="outreach-act-btn outlook"
+                  onClick={() => handleOpenClient(previewDraft)}
+                  style={{
+                    background: '#0078d4',
+                    color: '#ffffff',
+                    border: 'none',
+                    padding: '0.5rem 1.1rem',
+                    borderRadius: '6px',
+                    fontWeight: 600,
+                    fontSize: '0.85rem',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    cursor: 'pointer'
+                  }}
+                  title={`Open pre-filled proposal in Microsoft Outlook Web from ${previewDraft.sender_email || 'support@gisfy.co.in'} (CC: bidding@gisfy.co.in)`}
+                >
+                  📬 Open in Outlook ({previewDraft.sender_email || 'support@gisfy.co.in'})
+                </button>
+              ) : (
+                <button
+                  className="outreach-act-btn gmail"
+                  onClick={() => handleOpenClient(previewDraft)}
+                  style={{
+                    background: '#ea4335',
+                    color: '#ffffff',
+                    border: 'none',
+                    padding: '0.5rem 1.1rem',
+                    borderRadius: '6px',
+                    fontWeight: 600,
+                    fontSize: '0.85rem',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    cursor: 'pointer'
+                  }}
+                  title="Open pre-filled proposal in Gmail from bidding.gisfy@gmail.com (CC: bidding@gisfy.co.in)"
+                >
+                  ✉️ Open in Gmail (bidding.gisfy@gmail.com)
+                </button>
+              )}
+
               {previewDraft.status === 'draft' && (
-                <button 
+                <button
                   className="outreach-act-btn approve"
                   onClick={() => {
                     handleApprove(previewDraft.id);
@@ -1797,13 +2495,18 @@ Website: www.gisfy.co.in`;
                 </button>
               )}
 
-              <button 
+              <button
                 className="outreach-btn-primary"
                 onClick={() => handleSend(previewDraft.id)}
                 disabled={actionLoading || previewDraft.status === 'Sending' || previewDraft.status === 'Provider Accepted'}
-                style={{ padding: '0.5rem 1.2rem', fontSize: '0.85rem' }}
+                style={{
+                  padding: '0.5rem 1.2rem',
+                  fontSize: '0.85rem',
+                  background: (previewDraft.scope === 'adb' || previewDraft.is_adb || (previewDraft.state_name || '').toLowerCase().includes('adb')) ? '#0078d4' : '#ea4335',
+                  borderColor: (previewDraft.scope === 'adb' || previewDraft.is_adb || (previewDraft.state_name || '').toLowerCase().includes('adb')) ? '#0078d4' : '#ea4335'
+                }}
               >
-                🚀 Dispatch via Outlook
+                {(previewDraft.scope === 'adb' || previewDraft.is_adb || (previewDraft.state_name || '').toLowerCase().includes('adb')) ? '🚀 Dispatch via Outlook' : '🚀 Dispatch via Gmail'}
               </button>
             </div>
           </div>
@@ -1821,7 +2524,7 @@ Website: www.gisfy.co.in`;
                   Requirement: Send exactly one test email to an approved recipient before bulk automated outreach
                 </div>
               </div>
-              <button 
+              <button
                 onClick={() => setShowTestModal(false)}
                 style={{ background: 'transparent', border: 'none', color: '#ffffff', fontSize: '1.2rem', cursor: 'pointer' }}
               >
@@ -1835,11 +2538,11 @@ Website: www.gisfy.co.in`;
                   ✉️ Test Message Envelope &amp; Content Preview:
                 </div>
                 <div style={{ color: '#475569', lineHeight: 1.5 }}>
-                  • <strong>From:</strong> Farhath Bakka &lt;farhath@gisfy.co.in&gt;, GISFY Support &lt;support@gisfy.co.in&gt;<br/>
-                  • <strong>To:</strong> {testRecipient || 'Approved recipient'}<br/>
-                  • <strong>CC:</strong> bidding@gisfy.co.in<br/>
-                  • <strong>Reply-To:</strong> farhath@gisfy.co.in, support@gisfy.co.in<br/>
-                  • <strong>Subject:</strong> Exploring JV / Consortium Partnership – Test Verification Ref #TEST-1<br/>
+                  • <strong>From:</strong> GISFY Support &lt;support@gisfy.co.in&gt;<br />
+                  • <strong>To:</strong> {testRecipient || 'Approved recipient'}<br />
+                  • <strong>CC:</strong> bidding@gisfy.co.in<br />
+                  • <strong>Reply-To:</strong> support@gisfy.co.in<br />
+                  • <strong>Subject:</strong> Exploring JV / Consortium Partnership – Test Verification Ref #TEST-1<br />
                   • <strong>Body:</strong> Official GISFY JV Letter of Intent with company intro, statutory document requests, agreement clause, and official corporate signature.
                 </div>
               </div>
@@ -1848,10 +2551,10 @@ Website: www.gisfy.co.in`;
                 <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.3rem' }}>
                   Approved Test Recipient Email Address:
                 </label>
-                <input 
-                  type="email" 
+                <input
+                  type="email"
                   className="add-doc-input"
-                  placeholder="e.g. farhath@gisfy.co.in or your test inbox"
+                  placeholder="e.g. support@gisfy.co.in or your test inbox"
                   value={testRecipient}
                   onChange={e => setTestRecipient(e.target.value)}
                   required
@@ -1862,10 +2565,10 @@ Website: www.gisfy.co.in`;
                 <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.3rem' }}>
                   Approval Note / Authorization:
                 </label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   className="add-doc-input"
-                  placeholder="e.g. Approved by Farhath for live delivery verification"
+                  placeholder="e.g. Approved by GISFY Support for live delivery verification"
                   value={testNotes}
                   onChange={e => setTestNotes(e.target.value)}
                 />
@@ -1886,15 +2589,67 @@ Website: www.gisfy.co.in`;
                         🎉 Email Dispatched Successfully via Microsoft Graph!
                       </div>
                       <div>• <strong>Delivery Mode:</strong> Authenticated Microsoft 365 Graph API (/me/sendMail)</div>
-                      <div>• <strong>Sender:</strong> Farhath Bakka &lt;farhath@gisfy.co.in&gt;</div>
+                      <div>• <strong>Sender:</strong> GISFY Support &lt;support@gisfy.co.in&gt;</div>
                       <div>• <strong>Recipient:</strong> {testResult.recipient}</div>
                       <div>• <strong>Mandatory CC:</strong> {testResult.cc || 'bidding@gisfy.co.in'}</div>
-                      <div>• <strong>Farhath Sent Items:</strong> {testResult.sent_folder_verified ? 'Verified in Sent Folder ✅' : 'Verified via Graph API'}</div>
+                      <div>• <strong>Sent Items:</strong> {testResult.sent_folder_verified ? 'Verified in Sent Folder ✅' : 'Verified via Graph API'}</div>
                       <div style={{ marginTop: '0.5rem', fontSize: '0.78rem', color: '#047857', lineHeight: 1.5 }}>
-                        Dispatched with <code>saveToSentItems=true</code> directly through Farhath Bakka's Microsoft 365 mailbox!
+                        Dispatched with <code>saveToSentItems=true</code> directly through GISFY Support Microsoft 365 mailbox!
                       </div>
-                      {testResult.outlook_web_url && (
-                        <div style={{ marginTop: '0.6rem' }}>
+                      {(testResult.outlook_web_url || testResult.gmail_web_url) && (
+                        <div style={{ marginTop: '0.6rem', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          {testResult.outlook_web_url && (
+                            <a
+                              href={testResult.outlook_web_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                display: 'inline-block',
+                                background: '#2563eb',
+                                color: '#ffffff',
+                                padding: '5px 12px',
+                                borderRadius: '6px',
+                                fontSize: '0.78rem',
+                                fontWeight: 700,
+                                textDecoration: 'none'
+                              }}
+                            >
+                              🌐 Open in Outlook (support@gisfy.co.in)
+                            </a>
+                          )}
+                          {testResult.gmail_web_url && (
+                            <a
+                              href={testResult.gmail_web_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                display: 'inline-block',
+                                background: '#ea4335',
+                                color: '#ffffff',
+                                padding: '5px 12px',
+                                borderRadius: '6px',
+                                fontSize: '0.78rem',
+                                fontWeight: 700,
+                                textDecoration: 'none'
+                              }}
+                            >
+                              ✉️ Open in Gmail (bidding.gisfy@gmail.com)
+                            </a>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: '0.9rem', marginBottom: '0.4rem', color: '#b91c1c' }}>
+                        ❌ Dispatch Notice
+                      </div>
+                      <div><strong>Notice:</strong> {testResult.error || testResult.message}</div>
+                      <div style={{ marginTop: '0.4rem', fontSize: '0.75rem' }}>
+                        Click below to open the message directly in your mail application.
+                      </div>
+                      <div style={{ marginTop: '0.6rem', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        {testResult.outlook_web_url && (
                           <a
                             href={testResult.outlook_web_url}
                             target="_blank"
@@ -1910,27 +2665,17 @@ Website: www.gisfy.co.in`;
                               textDecoration: 'none'
                             }}
                           >
-                            🌐 Or Click to Open in Outlook Webmail
+                            🌐 Open in Outlook (support@gisfy.co.in)
                           </a>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div>
-                      <div style={{ fontWeight: 800, fontSize: '0.9rem', marginBottom: '0.4rem', color: '#b91c1c' }}>
-                        ❌ Dispatch Notice
-                      </div>
-                      <div><strong>Notice:</strong> {testResult.error || testResult.message}</div>
-                      <div style={{ marginTop: '0.4rem', fontSize: '0.75rem' }}>
-                        Click below to open the message directly in your mail application.
-                      </div>
-                      {testResult.mailto_url && (
-                        <div style={{ marginTop: '0.6rem' }}>
+                        )}
+                        {testResult.gmail_web_url && (
                           <a
-                            href={testResult.mailto_url}
+                            href={testResult.gmail_web_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
                             style={{
                               display: 'inline-block',
-                              background: '#2563eb',
+                              background: '#ea4335',
                               color: '#ffffff',
                               padding: '5px 12px',
                               borderRadius: '6px',
@@ -1939,25 +2684,42 @@ Website: www.gisfy.co.in`;
                               textDecoration: 'none'
                             }}
                           >
-                            ✉️ Open in Email Client Now
+                            ✉️ Open in Gmail (bidding.gisfy@gmail.com)
                           </a>
-                        </div>
-                      )}
+                        )}
+                        {testResult.mailto_url && (
+                          <a
+                            href={testResult.mailto_url}
+                            style={{
+                              display: 'inline-block',
+                              background: '#475569',
+                              color: '#ffffff',
+                              padding: '5px 12px',
+                              borderRadius: '6px',
+                              fontSize: '0.78rem',
+                              fontWeight: 700,
+                              textDecoration: 'none'
+                            }}
+                          >
+                            ✉️ Open in Native Mail
+                          </a>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
               )}
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.8rem', marginTop: '0.5rem' }}>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="outreach-act-btn"
                   onClick={() => setShowTestModal(false)}
                 >
                   Close
                 </button>
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   className="outreach-btn-primary"
                   disabled={testSending}
                   style={{ padding: '0.5rem 1.4rem', fontSize: '0.85rem' }}
@@ -1978,10 +2740,10 @@ Website: www.gisfy.co.in`;
               <div>
                 <h3 style={{ margin: 0, fontSize: '1.15rem' }}>⚙️ Live Email Provider Authentication Setup</h3>
                 <div style={{ fontSize: '0.78rem', color: '#93c5fd', marginTop: '0.2rem' }}>
-                  Sender: <strong>Farhath Bakka &lt;farhath@gisfy.co.in&gt;</strong> (Hosted on Microsoft 365)
+                  Sender: <strong>GISFY Support &lt;support@gisfy.co.in&gt;</strong> (Hosted on Microsoft 365)
                 </div>
               </div>
-              <button 
+              <button
                 onClick={() => setShowConfigModal(false)}
                 style={{ background: 'transparent', border: 'none', color: '#ffffff', fontSize: '1.2rem', cursor: 'pointer' }}
               >
@@ -2096,12 +2858,12 @@ Website: www.gisfy.co.in`;
                     <li><strong>Pre-filled Details:</strong> The recipient, mandatory CC (<code>bidding@gisfy.co.in</code>), Subject, and complete Letter of Intent proposal are automatically populated.</li>
                     <li><strong>Official Signature:</strong> The email body ends with:
                       <div style={{ background: '#ffffff', padding: '0.5rem 0.8rem', borderRadius: '6px', border: '1px solid #a7f3d0', margin: '0.4rem 0', fontFamily: 'monospace', fontSize: '0.78rem' }}>
-                        Thanks &amp; Regards,<br/>
-                        <strong>Farhath Bakka | Business Development Executive</strong><br/>
-                        GISFY Support &amp; Partnerships Team<br/>
-                        GISFY Private Limited<br/>
-                        Ground Floor, DSL Abacus IT Park, Uppal, Hyderabad, Telangana – 500039, India<br/>
-                        Email: farhath@gisfy.co.in | support@gisfy.co.in<br/>
+                        Thanks &amp; Regards,<br />
+                        <strong>GISFY Support Team</strong><br />
+                        GISFY Support &amp; Partnerships Team<br />
+                        GISFY Private Limited<br />
+                        Ground Floor, DSL Abacus IT Park, Uppal, Hyderabad, Telangana – 500039, India<br />
+                        Email: support@gisfy.co.in<br />
                         Mobile: +91 90631 20678 | Website: www.gisfy.co.in
                       </div>
                     </li>
@@ -2110,9 +2872,9 @@ Website: www.gisfy.co.in`;
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
-                  <button 
-                    type="button" 
-                    className="outreach-btn-primary" 
+                  <button
+                    type="button"
+                    className="outreach-btn-primary"
                     onClick={() => setShowConfigModal(false)}
                     style={{ padding: '0.6rem 1.6rem' }}
                   >
@@ -2130,18 +2892,18 @@ Website: www.gisfy.co.in`;
                     <span>📧</span> Instant Live Sending via Gmail (Optional)
                   </div>
                   <div>
-                    • <strong>Zero Complex Relays:</strong> Authenticates instantly using a standard Google 16-character App Password.<br/>
-                    • <strong>Sender / From:</strong> Farhath Bakka &lt;farhath@gisfy.co.in&gt;, GISFY Support &lt;support@gisfy.co.in&gt;.<br/>
-                    • <strong>Mandatory CC:</strong> <code style={{ background: '#fee2e2', padding: '1px 5px', borderRadius: '4px' }}>bidding@gisfy.co.in</code> (Official GISFY bidding archive).<br/>
+                    • <strong>Zero Complex Relays:</strong> Authenticates instantly using a standard Google 16-character App Password.<br />
+                    • <strong>Sender / From:</strong> GISFY Support &lt;support@gisfy.co.in&gt;.<br />
+                    • <strong>Mandatory CC:</strong> <code style={{ background: '#fee2e2', padding: '1px 5px', borderRadius: '4px' }}>bidding@gisfy.co.in</code> (Official GISFY bidding archive).<br />
                     • <strong>Official Proposals:</strong> Dispatches GISFY JV / Consortium letters, legal clauses, and signature intact.
                   </div>
                 </div>
 
                 <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.9rem', fontSize: '0.83rem', color: '#334155', lineHeight: '1.6' }}>
-                  <strong style={{ color: '#0f172a' }}>👉 How to get your 16-character Google App Password (Takes 30 seconds):</strong><br/>
-                  1. In a new browser tab, go directly to: <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer" style={{ color: '#2563eb', fontWeight: 700, textDecoration: 'underline' }}>https://myaccount.google.com/apppasswords</a><br/>
-                  2. Under <em>"App name"</em>, type <strong>GISFY Outreach</strong> and click <strong>Create</strong>.<br/>
-                  3. Google will show a yellow box with a 16-character code (like <code style={{ background: '#e2e8f0', padding: '1px 6px', borderRadius: '3px', fontWeight: 700 }}>abcd efgh ijkl mnop</code>).<br/>
+                  <strong style={{ color: '#0f172a' }}>👉 How to get your 16-character Google App Password (Takes 30 seconds):</strong><br />
+                  1. In a new browser tab, go directly to: <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer" style={{ color: '#2563eb', fontWeight: 700, textDecoration: 'underline' }}>https://myaccount.google.com/apppasswords</a><br />
+                  2. Under <em>"App name"</em>, type <strong>GISFY Outreach</strong> and click <strong>Create</strong>.<br />
+                  3. Google will show a yellow box with a 16-character code (like <code style={{ background: '#e2e8f0', padding: '1px 6px', borderRadius: '3px', fontWeight: 700 }}>abcd efgh ijkl mnop</code>).<br />
                   4. Paste that code into the password field below and click Save!
                 </div>
 
@@ -2149,8 +2911,8 @@ Website: www.gisfy.co.in`;
                   <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.3rem' }}>
                     Your Gmail Address:
                   </label>
-                  <input 
-                    type="email" 
+                  <input
+                    type="email"
                     className="add-doc-input"
                     value={gmailForm.email}
                     onChange={e => setGmailForm({ ...gmailForm, email: e.target.value })}
@@ -2163,8 +2925,8 @@ Website: www.gisfy.co.in`;
                   <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.3rem' }}>
                     Google 16-Character App Password:
                   </label>
-                  <input 
-                    type="password" 
+                  <input
+                    type="password"
                     className="add-doc-input"
                     value={gmailForm.app_password}
                     onChange={e => setGmailForm({ ...gmailForm, app_password: e.target.value })}
@@ -2177,15 +2939,15 @@ Website: www.gisfy.co.in`;
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.8rem', marginTop: '0.5rem' }}>
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     className="outreach-act-btn"
                     onClick={() => setShowConfigModal(false)}
                   >
                     Cancel
                   </button>
-                  <button 
-                    type="submit" 
+                  <button
+                    type="submit"
                     className="outreach-btn-primary"
                     style={{ padding: '0.55rem 1.6rem', fontSize: '0.88rem', background: '#ea4335' }}
                   >
@@ -2292,9 +3054,9 @@ Website: www.gisfy.co.in`;
                         </span>
                       </div>
                       <div style={{ fontSize: '0.78rem', color: '#475569', lineHeight: 1.5 }}>
-                        • Selector Host: <code>mail._domainkey.gisfy.co.in</code> (TXT)<br/>
-                        • Value: Generated automatically in your Brevo dashboard under <strong>Senders &amp; IP &gt; Domains &gt; gisfy.co.in</strong>.<br/>
-                        • Ensures cryptographic authentication of Farhath's outgoing collaboration emails.
+                        • Selector Host: <code>mail._domainkey.gisfy.co.in</code> (TXT)<br />
+                        • Value: Generated automatically in your Brevo dashboard under <strong>Senders &amp; IP &gt; Domains &gt; gisfy.co.in</strong>.<br />
+                        • Ensures cryptographic authentication of outgoing collaboration emails.
                       </div>
                     </div>
 
@@ -2336,7 +3098,7 @@ Website: www.gisfy.co.in`;
             {/* Tab 4: Microsoft 365 OAuth 2.0 */}
             {configTab === 'm365' && (
               <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
-                
+
                 {/* 1. Live Connection Status Card */}
                 {providerStatus?.microsoft_365?.is_authenticated ? (
                   <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '10px', padding: '1rem 1.25rem' }}>
@@ -2348,7 +3110,7 @@ Website: www.gisfy.co.in`;
                             Connected &amp; Validated with Microsoft Graph
                           </div>
                           <div style={{ fontSize: '0.8rem', color: '#047857', marginTop: '0.15rem' }}>
-                            Mailbox: <strong>{providerStatus.microsoft_365.authenticated_mailbox || 'farhath@gisfy.co.in'}</strong> ({providerStatus.microsoft_365.display_name || 'Farhath Bakka'})
+                            Mailbox: <strong>{providerStatus.microsoft_365.authenticated_mailbox || 'support@gisfy.co.in'}</strong> ({providerStatus.microsoft_365.display_name || 'GISFY Support'})
                           </div>
                           <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '0.2rem' }}>
                             Flow: {providerStatus.microsoft_365.auth_flow} | Graph Endpoint: <code>/me/sendMail</code>
@@ -2401,14 +3163,14 @@ Website: www.gisfy.co.in`;
                           Microsoft 365 Device Code Authentication Inactive
                         </div>
                         <div style={{ fontSize: '0.8rem', color: '#78350f', marginTop: '0.15rem' }}>
-                          Live email dispatch is currently locked. Click <strong>Start Device Code Sign-In</strong> below to authenticate <code>farhath@gisfy.co.in</code>.
+                          Live email dispatch is currently locked. Click <strong>Start Device Code Sign-In</strong> below to authenticate <code>support@gisfy.co.in</code>.
                         </div>
                       </div>
                     </div>
                   </div>
                 )}
 
-                {/* Step 2 Primary Action: MSAL Device Code Flow for Farhath Bakka */}
+                {/* Step 2 Primary Action: MSAL Device Code Flow for support@gisfy.co.in */}
                 <div style={{
                   background: 'linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%)',
                   border: '2px solid #3b82f6',
@@ -2437,14 +3199,14 @@ Website: www.gisfy.co.in`;
                       color: providerStatus?.microsoft_365?.is_authenticated ? '#15803d' : '#1d4ed8',
                       border: providerStatus?.microsoft_365?.is_authenticated ? '1px solid #86efac' : '1px solid #bfdbfe'
                     }}>
-                      {providerStatus?.microsoft_365?.is_authenticated ? 'Connected: farhath@gisfy.co.in ✅' : 'Device Code Flow Ready'}
+                      {providerStatus?.microsoft_365?.is_authenticated ? 'Connected: support@gisfy.co.in ✅' : 'Device Code Flow Ready'}
                     </span>
                   </div>
 
                   {deviceFlow ? (
                     <div style={{ background: '#ffffff', border: '1px solid #bfdbfe', borderRadius: '10px', padding: '1.1rem', marginTop: '0.75rem' }}>
                       <div style={{ fontSize: '0.82rem', color: '#1e293b', marginBottom: '0.6rem', fontWeight: 600 }}>
-                        👉 Enter this one-time code at Microsoft Device Login to authenticate <code style={{ color: '#2563eb' }}>farhath@gisfy.co.in</code>:
+                        👉 Enter this one-time code at Microsoft Device Login to authenticate <code style={{ color: '#2563eb' }}>support@gisfy.co.in</code>:
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                         <div style={{
@@ -2513,13 +3275,13 @@ Website: www.gisfy.co.in`;
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.8rem', fontSize: '0.78rem', color: '#0369a1' }}>
                         <span style={{ display: 'inline-block', animation: 'spin 1.5s linear infinite' }}>⏳</span>
-                        <span>Live Polling: Waiting for sign-in with <strong>farhath@gisfy.co.in</strong>... (Checking every 3s)</span>
+                        <span>Live Polling: Waiting for sign-in with <strong>support@gisfy.co.in</strong>... (Checking every 3s)</span>
                       </div>
                     </div>
                   ) : (
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.8rem', marginTop: '0.75rem' }}>
                       <div style={{ fontSize: '0.8rem', color: '#334155', maxWidth: '440px', lineHeight: 1.45 }}>
-                        Reuses your active Microsoft Outlook browser session. No secret keys or passwords required. Microsoft Graph automatically confirms mailbox is strictly <strong>farhath@gisfy.co.in</strong>.
+                        Reuses your active Microsoft Outlook browser session. No secret keys or passwords required. Microsoft Graph automatically confirms mailbox is strictly <strong>support@gisfy.co.in</strong>.
                       </div>
                       <button
                         type="button"
@@ -2540,7 +3302,7 @@ Website: www.gisfy.co.in`;
                           gap: '0.5rem'
                         }}
                       >
-                        <span>🚀</span> {startingDeviceFlow ? 'Initiating Flow...' : 'Start Device Code Sign-In for farhath@gisfy.co.in'}
+                        <span>🚀</span> {startingDeviceFlow ? 'Initiating Flow...' : 'Start Device Code Sign-In for support@gisfy.co.in'}
                       </button>
                     </div>
                   )}
@@ -2548,14 +3310,14 @@ Website: www.gisfy.co.in`;
 
                 {/* 2. Credentials Configuration Form */}
                 <form onSubmit={handleSaveM365} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  
+
                   <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.8fr', gap: '0.8rem' }}>
                     <div>
                       <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.3rem' }}>
                         Microsoft 365 Tenant:
                       </label>
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         className="add-doc-input"
                         value={m365Form.tenant_id}
                         onChange={e => setM365Form({ ...m365Form, tenant_id: e.target.value })}
@@ -2571,8 +3333,8 @@ Website: www.gisfy.co.in`;
                       <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.3rem' }}>
                         Application (Client) ID: <span style={{ color: '#ef4444' }}>*</span>
                       </label>
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         className="add-doc-input"
                         value={m365Form.client_id}
                         onChange={e => setM365Form({ ...m365Form, client_id: e.target.value })}
@@ -2591,8 +3353,8 @@ Website: www.gisfy.co.in`;
                     <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.3rem' }}>
                       Client Secret (App Secret): <span style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: 'normal' }}>(Optional for Device Code Flow)</span>
                     </label>
-                    <input 
-                      type="password" 
+                    <input
+                      type="password"
                       className="add-doc-input"
                       value={m365Form.client_secret}
                       onChange={e => setM365Form({ ...m365Form, client_secret: e.target.value })}
@@ -2610,7 +3372,7 @@ Website: www.gisfy.co.in`;
                         ⚡ App-Only Authentication (Client Credentials Flow)
                       </div>
                       <div style={{ fontSize: '0.78rem', color: '#15803d', marginTop: '0.2rem' }}>
-                        Headless background mode. <strong>No password or interactive MFA required.</strong> Uses Entra App Permissions scoped to Farhath's mailbox.
+                        Headless background mode. <strong>No password or interactive MFA required.</strong> Uses Entra App Permissions scoped to Support mailbox.
                       </div>
                     </div>
                     <button
@@ -2641,7 +3403,7 @@ Website: www.gisfy.co.in`;
                         Alternative: Interactive Web Redirect Sign-In
                       </div>
                       <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '0.15rem' }}>
-                        Opens Microsoft's web sign-in prompt for <code>farhath@gisfy.co.in</code>.
+                        Opens Microsoft's web sign-in prompt for <code>support@gisfy.co.in</code>.
                       </div>
                     </div>
                     <button
@@ -2664,8 +3426,8 @@ Website: www.gisfy.co.in`;
                   </div>
 
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.8rem', marginTop: '0.5rem' }}>
-                    <button 
-                      type="button" 
+                    <button
+                      type="button"
                       className="outreach-act-btn"
                       onClick={() => setShowConfigModal(false)}
                     >
@@ -2687,11 +3449,11 @@ Website: www.gisfy.co.in`;
                       Go to <strong>Identity &gt; Applications &gt; App registrations</strong> and click <strong>New registration</strong>.
                     </li>
                     <li>
-                      <strong>Name:</strong> <code>GISFY Proposal Automation Agent</code><br/>
+                      <strong>Name:</strong> <code>GISFY Proposal Automation Agent</code><br />
                       <strong>Supported account types:</strong> <em>Accounts in this organizational directory only (NETORGFT9776516 only - Single tenant)</em>
                     </li>
                     <li>
-                      <strong>Redirect URI:</strong> Platform: <strong>Web</strong><br/>
+                      <strong>Redirect URI:</strong> Platform: <strong>Web</strong><br />
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.3rem', marginBottom: '0.3rem' }}>
                         <code style={{ background: '#ffffff', padding: '4px 8px', borderRadius: '4px', border: '1px solid #bfdbfe', color: '#1e40af', fontWeight: 700 }}>
                           http://localhost:8000/api/collaboration/m365/callback
@@ -2709,8 +3471,8 @@ Website: www.gisfy.co.in`;
                       Click <strong>Register</strong>. Copy the <strong>Application (client) ID</strong> and paste it in the field above.
                     </li>
                     <li>
-                      Go to <strong>API permissions &gt; Add a permission &gt; Microsoft Graph &gt; Delegated permissions</strong>.<br/>
-                      Add: <code>Mail.Send</code>, <code>Mail.ReadWrite</code>, <code>User.Read</code>.<br/>
+                      Go to <strong>API permissions &gt; Add a permission &gt; Microsoft Graph &gt; Delegated permissions</strong>.<br />
+                      Add: <code>Mail.Send</code>, <code>Mail.ReadWrite</code>, <code>User.Read</code>.<br />
                       (Recommended): Click <strong>Grant admin consent for NETORGFT9776516</strong>.
                     </li>
                     <li>
@@ -2721,7 +3483,7 @@ Website: www.gisfy.co.in`;
 
                 {/* 4. Background Email Scheduling & Exchange Mailbox Scoping (RBAC) */}
                 <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '1rem' }}>
-                  <div 
+                  <div
                     onClick={() => setShowRbacGuide(!showRbacGuide)}
                     style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
                   >
@@ -2736,21 +3498,21 @@ Website: www.gisfy.co.in`;
                   {showRbacGuide && (
                     <div style={{ marginTop: '0.75rem', fontSize: '0.8rem', color: '#475569', lineHeight: 1.6, borderTop: '1px solid #e2e8f0', paddingTop: '0.75rem' }}>
                       <p style={{ margin: '0 0 0.5rem' }}>
-                        <strong>1. Delegated OAuth Reliability:</strong><br/>
+                        <strong>1. Delegated OAuth Reliability:</strong><br />
                         Delegated OAuth tokens use a 90-day rolling refresh token window. Because the application runs daily at 9:00 AM IST, every dispatch automatically refreshes and extends the token. As long as tenant Conditional Access doesn't enforce short sign-in frequency policies, delegated OAuth runs perpetually without manual re-auth.
                       </p>
                       <p style={{ margin: '0 0 0.5rem' }}>
-                        <strong>2. Application Permissions Scoped to Farhath's Mailbox (Exchange Online RBAC):</strong><br/>
-                        If tenant policies require headless service principal authentication without interactive tokens, request application permission <code>Mail.Send</code>. To prevent unrestricted tenant-wide email access, an Exchange Administrator must run this PowerShell command to restrict access <em>strictly to Farhath's mailbox</em>:
+                        <strong>2. Application Permissions Scoped to Support Mailbox (Exchange Online RBAC):</strong><br />
+                        If tenant policies require headless service principal authentication without interactive tokens, request application permission <code>Mail.Send</code>. To prevent unrestricted tenant-wide email access, an Exchange Administrator must run this PowerShell command to restrict access <em>strictly to Support's mailbox</em>:
                       </p>
                       <div style={{ background: '#0f172a', color: '#f8fafc', padding: '0.75rem', borderRadius: '6px', fontFamily: 'monospace', fontSize: '0.75rem', overflowX: 'auto', position: 'relative' }}>
                         <code>
-                          New-ApplicationAccessPolicy -AppId "{m365Form.client_id || '<YOUR_CLIENT_ID>'}" -PolicyScopeGroupId "farhath@gisfy.co.in" -AccessRight RestrictAccess -Description "Restrict proposal agent to Farhath mailbox only"
+                          New-ApplicationAccessPolicy -AppId "{m365Form.client_id || '<YOUR_CLIENT_ID>'}" -PolicyScopeGroupId "support@gisfy.co.in" -AccessRight RestrictAccess -Description "Restrict proposal agent to Support mailbox only"
                         </code>
                         <div style={{ marginTop: '0.5rem', textAlign: 'right' }}>
                           <button
                             type="button"
-                            onClick={() => copyToClipboard(`New-ApplicationAccessPolicy -AppId "${m365Form.client_id || '<YOUR_CLIENT_ID>'}" -PolicyScopeGroupId "farhath@gisfy.co.in" -AccessRight RestrictAccess -Description "Restrict proposal agent to Farhath mailbox only"`, 'ps_command')}
+                            onClick={() => copyToClipboard(`New-ApplicationAccessPolicy -AppId "${m365Form.client_id || '<YOUR_CLIENT_ID>'}" -PolicyScopeGroupId "support@gisfy.co.in" -AccessRight RestrictAccess -Description "Restrict proposal agent to Support mailbox only"`, 'ps_command')}
                             style={{ padding: '3px 8px', fontSize: '0.7rem', borderRadius: '4px', border: '1px solid #475569', background: '#334155', color: '#ffffff', cursor: 'pointer' }}
                           >
                             {copiedPsCommand ? '✅ Copied!' : '📋 Copy PowerShell Command'}
@@ -2768,11 +3530,11 @@ Website: www.gisfy.co.in`;
             {configTab === 'smtp' && (
               <form onSubmit={handleSaveSmtp} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.85rem', fontSize: '0.82rem', color: '#334155', lineHeight: 1.5 }}>
-                  🔑 <strong>Authenticated SMTP &amp; IMAP Sent Sync:</strong><br/>
-                  • Host: <code>smtp.office365.com</code> (Port 587 STARTTLS)<br/>
-                  • User: <code>farhath@gisfy.co.in</code><br/>
-                  • Password: Password / 16-character App Password<br/>
-                  • Sent Folder: Automatically syncs sent emails to Farhath's "Sent Items" folder via IMAP.
+                  🔑 <strong>Authenticated SMTP &amp; IMAP Sent Sync:</strong><br />
+                  • Host: <code>smtp.office365.com</code> (Port 587 STARTTLS)<br />
+                  • User: <code>support@gisfy.co.in</code><br />
+                  • Password: Password / 16-character App Password<br />
+                  • Sent Folder: Automatically syncs sent emails to "Sent Items" folder via IMAP.
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '0.75rem' }}>
@@ -2780,8 +3542,8 @@ Website: www.gisfy.co.in`;
                     <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.3rem' }}>
                       SMTP Host:
                     </label>
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       className="add-doc-input"
                       value={smtpForm.host}
                       onChange={e => setSmtpForm({ ...smtpForm, host: e.target.value })}
@@ -2792,8 +3554,8 @@ Website: www.gisfy.co.in`;
                     <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.3rem' }}>
                       Port:
                     </label>
-                    <input 
-                      type="number" 
+                    <input
+                      type="number"
                       className="add-doc-input"
                       value={smtpForm.port}
                       onChange={e => setSmtpForm({ ...smtpForm, port: parseInt(e.target.value) || 587 })}
@@ -2806,8 +3568,8 @@ Website: www.gisfy.co.in`;
                   <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.3rem' }}>
                     User / Email Address:
                   </label>
-                  <input 
-                    type="email" 
+                  <input
+                    type="email"
                     className="add-doc-input"
                     value={smtpForm.user}
                     onChange={e => setSmtpForm({ ...smtpForm, user: e.target.value })}
@@ -2819,8 +3581,8 @@ Website: www.gisfy.co.in`;
                   <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.3rem' }}>
                     App Password / SMTP Password:
                   </label>
-                  <input 
-                    type="password" 
+                  <input
+                    type="password"
                     className="add-doc-input"
                     value={smtpForm.password}
                     onChange={e => setSmtpForm({ ...smtpForm, password: e.target.value })}
@@ -2836,8 +3598,8 @@ Website: www.gisfy.co.in`;
                   <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.3rem' }}>
                     IMAP Host for Sent Folder Synchronization:
                   </label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     className="add-doc-input"
                     value={smtpForm.imap_host}
                     onChange={e => setSmtpForm({ ...smtpForm, imap_host: e.target.value })}
@@ -2846,15 +3608,15 @@ Website: www.gisfy.co.in`;
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.8rem', marginTop: '0.5rem' }}>
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     className="outreach-act-btn"
                     onClick={() => setShowConfigModal(false)}
                   >
                     Cancel
                   </button>
-                  <button 
-                    type="submit" 
+                  <button
+                    type="submit"
                     className="outreach-btn-primary"
                     style={{ padding: '0.5rem 1.4rem', fontSize: '0.85rem' }}
                   >
@@ -2868,7 +3630,7 @@ Website: www.gisfy.co.in`;
             {configTab === 'google' && (
               <form onSubmit={handleSaveGoogle} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.85rem', fontSize: '0.82rem', color: '#334155' }}>
-                  🌐 <strong>Google Workspace OAuth 2.0:</strong><br/>
+                  🌐 <strong>Google Workspace OAuth 2.0:</strong><br />
                   Enter Google Cloud OAuth 2.0 Client credentials if migrating domain to Google Workspace.
                 </div>
 
@@ -2876,8 +3638,8 @@ Website: www.gisfy.co.in`;
                   <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.3rem' }}>
                     Google OAuth Client ID:
                   </label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     className="add-doc-input"
                     value={googleForm.client_id}
                     onChange={e => setGoogleForm({ ...googleForm, client_id: e.target.value })}
@@ -2890,8 +3652,8 @@ Website: www.gisfy.co.in`;
                   <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.3rem' }}>
                     Google OAuth Client Secret:
                   </label>
-                  <input 
-                    type="password" 
+                  <input
+                    type="password"
                     className="add-doc-input"
                     value={googleForm.client_secret}
                     onChange={e => setGoogleForm({ ...googleForm, client_secret: e.target.value })}
@@ -2903,8 +3665,8 @@ Website: www.gisfy.co.in`;
                   <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.3rem' }}>
                     Refresh Token:
                   </label>
-                  <input 
-                    type="password" 
+                  <input
+                    type="password"
                     className="add-doc-input"
                     value={googleForm.refresh_token}
                     onChange={e => setGoogleForm({ ...googleForm, refresh_token: e.target.value })}
@@ -2913,15 +3675,15 @@ Website: www.gisfy.co.in`;
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.8rem', marginTop: '0.5rem' }}>
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     className="outreach-act-btn"
                     onClick={() => setShowConfigModal(false)}
                   >
                     Cancel
                   </button>
-                  <button 
-                    type="submit" 
+                  <button
+                    type="submit"
                     className="outreach-btn-primary"
                     style={{ padding: '0.5rem 1.4rem', fontSize: '0.85rem' }}
                   >
@@ -2930,6 +3692,233 @@ Website: www.gisfy.co.in`;
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+      {/* 9. Dynamic Schedule & Active Window Settings Modal */}
+      {showScheduleModal && (
+        <div className="modal-overlay" onClick={() => setShowScheduleModal(false)}>
+          <div className="outreach-modal-content" style={{ maxWidth: '580px', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            <div className="outreach-modal-header" style={{ background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#ffffff' }}>⏰ Dynamic Outreach Schedule Settings</h3>
+                <div style={{ fontSize: '0.78rem', color: '#a5b4fc', marginTop: '0.2rem' }}>
+                  Configure what time automated partner collaboration emails run every day
+                </div>
+              </div>
+              <button
+                onClick={() => setShowScheduleModal(false)}
+                style={{ background: 'transparent', border: 'none', color: '#ffffff', fontSize: '1.2rem', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ padding: '1.5rem', background: '#ffffff' }}>
+              {/* Schedule 1: 29 Indian States */}
+              <div style={{
+                background: '#f0fdf4',
+                border: '1.5px solid #86efac',
+                borderRadius: '10px',
+                padding: '1.1rem',
+                marginBottom: '1.25rem'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
+                  <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#166534', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>🇮🇳</span>
+                    <span>29 Indian States Outreach (bidding.gisfy@gmail.com)</span>
+                  </div>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#15803d', background: '#dcfce7', padding: '2px 8px', borderRadius: '12px' }}>
+                    Everyday Schedule
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.6rem' }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#166534' }}>Execution Time:</label>
+                  <input
+                    type="time"
+                    value={statesTimeInput}
+                    onChange={(e) => setStatesTimeInput(e.target.value)}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: '6px',
+                      border: '1.5px solid #22c55e',
+                      fontSize: '1rem',
+                      fontWeight: 800,
+                      color: '#14532d',
+                      background: '#ffffff'
+                    }}
+                  />
+                  <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#15803d' }}>IST (Asia/Kolkata)</span>
+                </div>
+                <div style={{ fontSize: '0.76rem', color: '#166534', lineHeight: 1.4, marginBottom: '0.6rem' }}>
+                  • <strong>From:</strong> N C Harika | Business Development Executive &lt;bidding.gisfy@gmail.com&gt;<br />
+                  • <strong>CC:</strong> bidding@gisfy.co.in | Dispatches automatically without delay.
+                </div>
+                <button
+                  type="button"
+                  disabled={triggeringStates}
+                  onClick={handleTriggerStates}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    border: '1px solid #16a34a',
+                    background: '#16a34a',
+                    color: '#ffffff',
+                    fontSize: '0.76rem',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {triggeringStates ? '⏳ Sending 29 States Batch...' : '⚡ Trigger 29 States (09:30 AM) Now'}
+                </button>
+              </div>
+
+              {/* Schedule 2: ADB Multilateral Projects */}
+              <div style={{
+                background: '#eff6ff',
+                border: '1.5px solid #93c5fd',
+                borderRadius: '10px',
+                padding: '1.1rem',
+                marginBottom: '1.25rem'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
+                  <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#1e40af', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>🌐</span>
+                    <span>ADB Multilateral Projects Outreach</span>
+                  </div>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#1d4ed8', background: '#dbeafe', padding: '2px 8px', borderRadius: '12px' }}>
+                    Rotating Quota
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.6rem' }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#1e40af' }}>Execution Time:</label>
+                  <input
+                    type="time"
+                    value={adbTimeInput}
+                    onChange={(e) => setAdbTimeInput(e.target.value)}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: '6px',
+                      border: '1.5px solid #3b82f6',
+                      fontSize: '1rem',
+                      fontWeight: 800,
+                      color: '#1e3a8a',
+                      background: '#ffffff'
+                    }}
+                  />
+                  <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#1d4ed8' }}>IST</span>
+                  <span style={{ color: '#93c5fd' }}>|</span>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#1e40af' }}>Quota per Sender:</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="500"
+                    value={adbQuotaInput}
+                    onChange={(e) => setAdbQuotaInput(parseInt(e.target.value) || 50)}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: '6px',
+                      border: '1.5px solid #3b82f6',
+                      fontSize: '0.9rem',
+                      fontWeight: 800,
+                      color: '#1e3a8a',
+                      width: '60px',
+                      background: '#ffffff'
+                    }}
+                  />
+                  <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#1d4ed8' }}>emails</span>
+                </div>
+
+                {/* Visual Rotation Sequence */}
+                <div style={{ background: '#ffffff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '0.6rem 0.8rem', marginBottom: '0.6rem' }}>
+                  <div style={{ fontSize: '0.76rem', fontWeight: 800, color: '#1e40af', marginBottom: '0.3rem' }}>
+                    🔄 Strict Sequential Sender Rotation:
+                  </div>
+                  <div style={{ fontSize: '0.74rem', color: '#334155', lineHeight: 1.5 }}>
+                    1️⃣ <strong>{adbQuotaInput} Mails:</strong> N C Harika | Business Development Executive &lt;support@gisfy.co.in&gt;<br />
+                    2️⃣ <strong>Next {adbQuotaInput} Mails:</strong> Farhath | Business Development Executive &lt;farhath@gisfy.co.in&gt;<br />
+                    3️⃣ <strong>Next {adbQuotaInput} Mails:</strong> Firza | Business Development Executive &lt;firza@gisfy.co.in&gt;<br />
+                    <em>(Once 50 mails completed through support, next 50 send through Farhath, then Firza without delay)</em>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={triggeringAdb}
+                  onClick={handleTriggerAdb}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    border: '1px solid #2563eb',
+                    background: '#2563eb',
+                    color: '#ffffff',
+                    fontSize: '0.76rem',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {triggeringAdb ? '⏳ Sending ADB Rotation Tranches...' : '🌐 Trigger ADB 50-Rotation (10:30 AM) Now'}
+                </button>
+              </div>
+
+              {/* Active Sending Window */}
+              <div style={{
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '10px',
+                padding: '0.8rem 1rem',
+                marginBottom: '1.25rem'
+              }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.4rem' }}>
+                  🛡️ Active Dispatch Window:
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', flexWrap: 'wrap' }}>
+                  <input
+                    type="time"
+                    value={windowStartInput}
+                    onChange={(e) => setWindowStartInput(e.target.value)}
+                    style={{ padding: '3px 6px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', fontWeight: 700 }}
+                  />
+                  <span style={{ color: '#94a3b8' }}>to</span>
+                  <input
+                    type="time"
+                    value={windowEndInput}
+                    onChange={(e) => setWindowEndInput(e.target.value)}
+                    style={{ padding: '3px 6px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', fontWeight: 700 }}
+                  />
+                  <span style={{ fontSize: '0.74rem', color: '#64748b' }}>IST (Asia/Kolkata)</span>
+                </div>
+              </div>
+
+              {/* Modal Actions */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.8rem' }}>
+                <button
+                  type="button"
+                  className="outreach-act-btn"
+                  onClick={() => setShowScheduleModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="outreach-btn-primary"
+                  disabled={savingSchedule}
+                  onClick={() => handleUpdateScheduleTime(statesTimeInput, adbTimeInput, adbQuotaInput, windowStartInput, windowEndInput)}
+                  style={{
+                    padding: '0.55rem 1.4rem',
+                    fontSize: '0.85rem',
+                    fontWeight: 800,
+                    background: '#4f46e5',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {savingSchedule ? '⏳ Applying Schedules...' : '💾 Save & Apply Both Schedules'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

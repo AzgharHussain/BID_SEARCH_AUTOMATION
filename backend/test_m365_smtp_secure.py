@@ -3,7 +3,7 @@
 GISFY Microsoft 365 SMTP Secure Diagnostic & Verification Tool
 ==============================================================
 Securely tests whether password-based authenticated SMTP is permitted
-by Microsoft 365 tenant and mailbox policies for farhath@gisfy.co.in.
+by Microsoft 365 tenant and mailbox policies for support@gisfy.co.in.
 
 Security Guarantees:
 - Passwords entered via prompt are hidden (no echo).
@@ -73,8 +73,8 @@ def save_env_password(password: str):
 def run_smtp_diagnostic(password: str = None, test_recipient: str = None):
     host = "smtp.office365.com"
     port = 587
-    user = "farhath@gisfy.co.in"
-    from_addr = "Farhath Bakka <farhath@gisfy.co.in>"
+    user = "support@gisfy.co.in"
+    from_addr = "GISFY Support Team <support@gisfy.co.in>"
     cc_addr = "bidding@gisfy.co.in"
 
     print("\n" + "=" * 70)
@@ -119,7 +119,7 @@ def run_smtp_diagnostic(password: str = None, test_recipient: str = None):
         auth_code, auth_msg = server.login(user, password)
         auth_success = True
         print(f"  🎉 AUTHENTICATION SUCCESSFUL! (Code {auth_code}: {auth_msg.decode('utf-8', errors='ignore')})")
-        print("  ✓ Microsoft 365 Exchange Online has permitted authenticated SMTP for farhath@gisfy.co.in!")
+        print("  ✓ Microsoft 365 Exchange Online has permitted authenticated SMTP for support@gisfy.co.in!")
     except smtplib.SMTPAuthenticationError as e:
         auth_error_code = e.smtp_code
         auth_error_message = e.smtp_error.decode("utf-8", errors="ignore") if isinstance(e.smtp_error, bytes) else str(e.smtp_error)
@@ -140,13 +140,13 @@ def run_smtp_diagnostic(password: str = None, test_recipient: str = None):
             if "SmtpClientAuthentication is disabled" in auth_error_message:
                 print("• Exact Cause: Authenticated SMTP is DISABLED on the mailbox.")
                 print("• Solution: In Microsoft 365 Admin Center (admin.microsoft.com):")
-                print("  Users > Active users > Farhath Bakka > Mail tab > Manage email apps >")
+                print("  Users > Active users > GISFY Support > Mail tab > Manage email apps >")
                 print("  Check 'Authenticated SMTP' > Save changes.")
             elif "5.7.3" in auth_error_message:
                 print("• Exact Cause: 5.7.3 Authentication unsuccessful.")
                 print("  This error occurs under either of these conditions in Microsoft 365:")
                 print("  1. The password entered does not match the active mailbox password.")
-                print("  2. Multi-Factor Authentication (MFA) or Security Defaults are enforced on farhath@gisfy.co.in.")
+                print("  2. Multi-Factor Authentication (MFA) or Security Defaults are enforced on support@gisfy.co.in.")
                 print("     When MFA/Security Defaults are active, Exchange Online automatically blocks legacy Basic Auth SMTP.")
                 print("  3. Authenticated SMTP is turned off for this specific mailbox in Exchange Online.")
         print("-" * 70)
@@ -197,7 +197,7 @@ if __name__ == "__main__":
         print("No password found in backend/.env.")
         if sys.stdin.isatty():
             try:
-                password = getpass.getpass("Enter Farhath Bakka's Microsoft 365 Password (input hidden): ")
+                password = getpass.getpass("Enter GISFY Support's Microsoft 365 Password (input hidden): ")
                 if password:
                     save_choice = input("Save this password securely to backend/.env (0600 permissions)? [Y/n]: ").strip().lower()
                     if save_choice != 'n':

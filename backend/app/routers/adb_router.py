@@ -591,6 +591,7 @@ def generate_ai_readiness_analysis(
                 "description": p.get("description"),
                 "city": p.get("city"),
                 "state": p.get("state"),
+                "country": p.get("country") or p.get("state"),
                 "address": f"{p.get('city')}, {p.get('state')}" if p.get("city") and p.get("state") else (p.get("state") or p.get("city") or "India / Regional HQ"),
                 "pan_india_presence": p.get("pan_india_presence", True),
                 "contact_person": p.get("contact_person"),

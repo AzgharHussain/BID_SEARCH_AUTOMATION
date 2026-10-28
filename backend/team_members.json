@@ -1,45 +1,32 @@
 [
   {
-    "email": "farhath@gisfy.co.in",
-    "name": "Farhath Bakka",
-    "role": "Business Development Executive",
-    "added_at": "2026-10-23T10:00:00"
-  },
-  {
     "email": "support@gisfy.co.in",
-    "name": "GISFY Support Team",
-    "role": "Support & Outreach Operations",
+    "name": "N C Harika | Business Development Executive",
+    "role": "ADB Multilateral Partnerships & Outreach",
     "added_at": "2026-10-24T21:42:00"
   },
   {
+    "email": "farhath@gisfy.co.in",
+    "name": "Farhath | Business Development Executive",
+    "role": "ADB Strategic Alliances & Operations",
+    "added_at": "2026-10-28T10:00:00"
+  },
+  {
+    "email": "firza@gisfy.co.in",
+    "name": "Firza | Business Development Executive",
+    "role": "ADB Multilateral Proposals & Strategic JV",
+    "added_at": "2026-10-28T10:00:00"
+  },
+  {
     "email": "bidding@gisfy.co.in",
-    "name": "GISFY Bidding Team",
-    "role": "Bidding & Strategic Partnerships",
+    "name": "GISFY Bidding Operations",
+    "role": "Mandatory CC & Proposals Directorate",
     "added_at": "2026-10-22T10:00:00"
   },
-
   {
-    "email": "swethagisfy@gmail.com",
-    "name": "Swetha (GISFY)",
-    "role": "Executive Reviewer & Lead",
-    "added_at": "2026-10-16T15:47:00"
-  },
-  {
-    "email": "proposals-team@gisfy.co.in",
-    "name": "GISFY Proposals Team",
-    "role": "Bidding Team",
-    "added_at": "2026-10-15T12:00:00"
-  },
-  {
-    "email": "tenders@gisfy.co.in",
-    "name": "GISFY Tender Ops",
-    "role": "Procurement Lead",
-    "added_at": "2026-10-15T12:00:00"
-  },
-  {
-    "email": "director.projects@gisfy.co.in",
-    "name": "Project Director",
-    "role": "Executive Review",
-    "added_at": "2026-10-15T12:00:00"
+    "email": "bidding.gisfy@gmail.com",
+    "name": "N C Harika | Business Development Executive",
+    "role": "29 Indian States Tendering",
+    "added_at": "2026-10-23T12:00:00"
   }
 ]

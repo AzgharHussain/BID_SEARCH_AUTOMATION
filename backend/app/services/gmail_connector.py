@@ -102,7 +102,7 @@ class GmailConnector:
             os.getenv("SMTP_FROM") or
             os.getenv("GMAIL_SENDER_EMAIL") or 
             os.getenv("EMAIL_HOST_USER") or 
-            "Farhath Bakka <farhath@gisfy.co.in>"
+            "GISFY Support <support@gisfy.co.in>"
         )
         return {
             "is_connected": self.auth_type in ["OAuth2", "SMTP"],
@@ -169,8 +169,8 @@ class GmailConnector:
         Create an email draft in authorized Gmail account.
         Requirement 9: Start in draft-only mode.
         """
-        from_email = sender_email or os.getenv("SMTP_FROM") or os.getenv("GMAIL_SENDER_EMAIL") or "farhath@gisfy.co.in"
-        from_header = from_email if "<" in from_email else f"Farhath Bakka <{from_email}>"
+        from_email = sender_email or os.getenv("SMTP_FROM") or os.getenv("GMAIL_SENDER_EMAIL") or "support@gisfy.co.in"
+        from_header = from_email if "<" in from_email else f"GISFY Support <{from_email}>"
 
         msg = MIMEMultipart("alternative")
         msg["To"] = to_email
@@ -178,7 +178,7 @@ class GmailConnector:
         if cc_email:
             msg["Cc"] = cc_email
         msg["Subject"] = subject
-        msg["Reply-To"] = "farhath@gisfy.co.in"
+        msg["Reply-To"] = "support@gisfy.co.in"
 
         msg.attach(MIMEText(body_text, "plain", "utf-8"))
         msg.attach(MIMEText(body_html, "html", "utf-8"))
@@ -223,8 +223,8 @@ class GmailConnector:
         Send an email via authorized Gmail API or secure SMTP.
         Returns: (success, message_id, thread_id, error_message)
         """
-        from_email = sender_email or os.getenv("SMTP_FROM") or os.getenv("GMAIL_SENDER_EMAIL") or "farhath@gisfy.co.in"
-        from_header = from_email if "<" in from_email else f"Farhath Bakka <{from_email}>"
+        from_email = sender_email or os.getenv("SMTP_FROM") or os.getenv("GMAIL_SENDER_EMAIL") or "support@gisfy.co.in"
+        from_header = from_email if "<" in from_email else f"GISFY Support <{from_email}>"
 
         msg = MIMEMultipart("alternative")
         msg["To"] = to_email
@@ -232,7 +232,7 @@ class GmailConnector:
         if cc_email:
             msg["Cc"] = cc_email
         msg["Subject"] = subject
-        msg["Reply-To"] = "farhath@gisfy.co.in"
+        msg["Reply-To"] = "support@gisfy.co.in"
 
         msg.attach(MIMEText(body_text, "plain", "utf-8"))
         msg.attach(MIMEText(body_html, "html", "utf-8"))

@@ -1,0 +1,25 @@
+{
+  "states_schedule_time": "09:30",
+  "states_hour": 9,
+  "states_minute": 30,
+  "states_formatted_time": "09:30 AM IST",
+  "states_sender_email": "bidding.gisfy@gmail.com",
+  "states_sender_name": "N C Harika | Business Development Executive",
+  "adb_schedule_time": "10:30",
+  "adb_hour": 10,
+  "adb_minute": 30,
+  "adb_formatted_time": "10:30 AM IST",
+  "adb_rotation_quota": 50,
+  "adb_senders_rotation": [
+    "support@gisfy.co.in",
+    "farhath@gisfy.co.in",
+    "firza@gisfy.co.in"
+  ],
+  "mandatory_cc": "bidding@gisfy.co.in",
+  "window_start": "09:00",
+  "window_end": "18:00",
+  "pilot_mode": true,
+  "auto_send_enabled": true,
+  "timezone": "Asia/Kolkata (IST)",
+  "updated_at": "2026-10-28T14:21:53.652717"
+}

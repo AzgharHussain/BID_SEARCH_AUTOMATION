@@ -224,7 +224,7 @@ def save_smtp_config_endpoint(payload: SmtpConfigPayload):
 @router.post("/test")
 def test_smtp_connection_endpoint(payload: SmtpTestPayload):
     """Send an immediate verification email to test SMTP connectivity."""
-    target_email = payload.target_email or "swethagisfy@gmail.com"
+    target_email = payload.target_email or "bidding.gisfy@gmail.com"
     res = test_smtp_connection(target_email=target_email)
     if res.get("status") == "error" or res.get("delivery_mode") != "smtp":
         raise HTTPException(

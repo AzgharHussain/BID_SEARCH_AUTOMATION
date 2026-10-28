@@ -15,10 +15,11 @@ def list_partners(
     search: Optional[str] = Query(None, description="Search by partner name, domain, city, or keyword"),
     domain: Optional[str] = Query(None, description="Filter by primary or secondary domain"),
     state: Optional[str] = Query(None, description="Filter by state location"),
+    category: Optional[str] = Query(None, description="Filter by category ('STATE' for 29 Indian States, 'ADB' for Asian Development Bank)"),
     certification: Optional[str] = Query(None, description="Filter by certification or empanelment"),
     status: Optional[str] = Query(None, description="Filter by partner status"),
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(150, ge=1, le=200),
     db: Session = Depends(get_db)
 ):
     """Retrieve all registered collaboration partners with optional multi-facet filtering."""
@@ -27,6 +28,7 @@ def list_partners(
         search=search,
         domain=domain,
         state=state,
+        category=category,
         certification=certification,
         status=status,
         skip=skip,
@@ -45,6 +47,7 @@ def search_partners_for_tender_endpoint(
     tender_id: int,
     query: Optional[str] = Query(None, description="Optional text query to narrow results"),
     domain: Optional[str] = Query(None, description="Optional domain filter"),
+    category: Optional[str] = Query(None, description="Filter by partner category ('STATE' or 'ADB')"),
     min_score: Optional[float] = Query(80.0, description="Minimum match score threshold (defaults to 80.0% for high matches)"),
     db: Session = Depends(get_db)
 ):
@@ -57,6 +60,7 @@ def search_partners_for_tender_endpoint(
         tender_id=tender_id,
         query_str=query,
         domain_filter=domain,
+        category_filter=category,
         min_score=min_score
     )
     if "error" in res:

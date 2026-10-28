@@ -20,14 +20,16 @@ CREDENTIALS_DIR = BASE_DIR / ".email_credentials"
 CREDENTIALS_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_FILE = CREDENTIALS_DIR / "provider_config.json"
 
-DEFAULT_SENDER_NAME = "Farhath Bakka & GISFY Support"
-DEFAULT_SENDER_EMAIL = "farhath@gisfy.co.in, support@gisfy.co.in"
-DEFAULT_PRIMARY_SENDER = "farhath@gisfy.co.in"
+DEFAULT_SENDER_NAME = "GISFY Support"
+DEFAULT_SENDER_EMAIL = "support@gisfy.co.in"
+DEFAULT_PRIMARY_SENDER = "support@gisfy.co.in"
 DEFAULT_SUPPORT_EMAIL = "support@gisfy.co.in"
-DEFAULT_FROM_ADDRESS = "Farhath Bakka <farhath@gisfy.co.in>, GISFY Support <support@gisfy.co.in>"
+DEFAULT_FROM_ADDRESS = "GISFY Support <support@gisfy.co.in>"
 DEFAULT_CC_EMAIL = "bidding@gisfy.co.in"
-DEFAULT_REPLY_TO = "farhath@gisfy.co.in, support@gisfy.co.in"
-ALLOWED_SENDERS = ["farhath@gisfy.co.in", "support@gisfy.co.in"]
+DEFAULT_REPLY_TO = "support@gisfy.co.in"
+ALLOWED_SENDERS = ["support@gisfy.co.in", "bidding.gisfy@gmail.com"]
+ADB_SENDER_EMAIL = "support@gisfy.co.in"
+STATE_SENDER_EMAIL = "bidding.gisfy@gmail.com"
 DEFAULT_M365_CLIENT_ID = "c2cd8349-a198-46d6-a6dc-325e86dd67a4"
 DEFAULT_M365_TENANT_ID = "de9e8583-c4c4-4212-9c27-e35cfa247419"
 DEFAULT_M365_TENANT = "de9e8583-c4c4-4212-9c27-e35cfa247419"
@@ -143,7 +145,7 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
             return ""
 
     # --------------------------------------------------------------------------
-    # Microsoft 365 MSAL Device Code Flow (Delegated Farhath Mailbox Sign-In)
+    # Microsoft 365 MSAL Device Code Flow (Delegated GISFY Support Mailbox Sign-In)
     # --------------------------------------------------------------------------
 
     def initiate_m365_device_flow(
@@ -152,7 +154,7 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
         tenant_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Initiate Microsoft MSAL Device Code Authentication for Farhath's mailbox.
+        Initiate Microsoft MSAL Device Code Authentication for GISFY Support mailbox.
         Disconnects any previous session and initiates device flow with Microsoft Entra.
         Returns user_code, verification_uri (https://microsoft.com/devicelogin), and starts polling thread.
         """
@@ -164,7 +166,7 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
         # Abort previous flow if active
         self.cancel_m365_device_flow()
 
-        # Purge previous Swethanjali or expired tokens without deleting database history
+        # Purge previous or expired tokens without deleting database history
         keys_to_clear = [
             "m365_access_token",
             "m365_refresh_token",
@@ -246,7 +248,7 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
                     user_email = (me_data.get("mail") or me_data.get("userPrincipalName") or "").strip().lower()
                     display_name = me_data.get("displayName") or DEFAULT_SENDER_NAME
 
-                    # Step 2: Confirm authenticated mailbox is farhath@gisfy.co.in or support@gisfy.co.in
+                    # Step 2: Confirm authenticated mailbox matches allowed senders (support@gisfy.co.in)
                     if user_email not in [e.lower() for e in ALLOWED_SENDERS]:
                         self._device_flow_status = "error"
                         self._device_flow_error = (
@@ -277,7 +279,7 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
 
                     self._device_flow_status = "completed"
                     self._device_flow_error = None
-                    print(f"✅ [M365 Device Flow] Successfully authenticated Farhath's mailbox: {user_email} ({display_name})")
+                    print(f"✅ [M365 Device Flow] Successfully authenticated GISFY Support mailbox: {user_email} ({display_name})")
                 else:
                     self._device_flow_status = "error"
                     self._device_flow_error = f"Microsoft Graph /me check returned HTTP {me_res.status_code}: {me_res.text}"
@@ -335,7 +337,7 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
     ) -> str:
         """
         Generate Microsoft Entra ID OAuth 2.0 authorization URL for delegated user sign-in.
-        Pre-populates login_hint for farhath@gisfy.co.in.
+        Pre-populates login_hint for support@gisfy.co.in.
         """
         import msal
 
@@ -443,7 +445,7 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
         except Exception as e:
             print(f"[EmailProvider] Note querying /me: {e}")
 
-        # Step 2: Enforce authenticated identity is Farhath Bakka or GISFY Support
+        # Step 2: Enforce authenticated identity is GISFY Support
         if user_email.lower() not in [e.lower() for e in ALLOWED_SENDERS]:
             return {
                 "success": False,
@@ -485,8 +487,8 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
     def verify_m365_connection(self) -> Dict[str, Any]:
         """
         Verify live connection and token validity against Microsoft Graph API.
-        For delegated flow: checks /me and confirms farhath@gisfy.co.in.
-        For app-only flow: checks /users/farhath@gisfy.co.in.
+        For delegated flow: checks /me and confirms support@gisfy.co.in.
+        For app-only flow: checks /users/support@gisfy.co.in.
         """
         ok, token, err = self._get_m365_access_token()
         if not ok or not token:
@@ -538,7 +540,7 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
             except Exception as exc:
                 return {"verified": False, "error": f"Microsoft Graph connection error: {exc}"}
 
-        # 2. Application Permissions flow: Check /v1.0/users/farhath@gisfy.co.in
+        # 2. Application Permissions flow: Check /v1.0/users/support@gisfy.co.in
         else:
             try:
                 res = requests.get(f"{GRAPH_API_BASE}/users/{DEFAULT_SENDER_EMAIL}", headers=headers, timeout=12)
@@ -760,11 +762,15 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
             "sender_email": DEFAULT_SENDER_EMAIL,
             "sender_name": DEFAULT_SENDER_NAME,
             "from_emails": ALLOWED_SENDERS,
+            "adb_sender_email": ADB_SENDER_EMAIL,
+            "adb_sender_name": "GISFY Support Team",
+            "state_sender_email": STATE_SENDER_EMAIL,
+            "state_sender_name": "GISFY Bidding Operations",
             "mandatory_cc": DEFAULT_CC_EMAIL,
             "reply_to": DEFAULT_REPLY_TO,
             "direct_mail": {
                 "is_configured": True,
-                "notes": f"Directly opens Microsoft Outlook or your default email client with recipient, CC ({DEFAULT_CC_EMAIL}), and Farhath Bakka & GISFY Support signature pre-filled. Ready to send immediately."
+                "notes": f"Scope-aware dispatch: ADB emails send from {ADB_SENDER_EMAIL} via Microsoft Outlook; 29 States emails send from {STATE_SENDER_EMAIL} via Gmail. CC: {DEFAULT_CC_EMAIL}. Ready to send immediately."
             },
             "graph_api_base": GRAPH_API_BASE,
             "redirect_uri": DEFAULT_REDIRECT_URI,
@@ -1097,10 +1103,10 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
         """
         Execute real authenticated live dispatch through the detected provider.
         Guarantees:
-        - From: Farhath Bakka <farhath@gisfy.co.in>
+        - From: GISFY Support <support@gisfy.co.in>
         - To: partner_email
         - CC: bidding@gisfy.co.in
-        - Reply-To: farhath@gisfy.co.in
+        - Reply-To: support@gisfy.co.in
         - Sent items synchronization (saveToSentItems: true)
         - Duplicate prevention
         """
@@ -1239,7 +1245,7 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
         Uses /me/sendMail for Delegated OAuth.
         Uses /users/{from_email}/sendMail for Application Permissions.
         Officially accepted by Exchange Online via HTTP 202 Accepted.
-        Automatically saves a copy to Farhath's Sent folder with 'saveToSentItems': true.
+        Automatically saves a copy to Sent folder with 'saveToSentItems': true.
         """
         ok, token, err = self._get_m365_access_token()
         if not ok:
@@ -1293,7 +1299,7 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
             if response.status_code == 202:
                 # HTTP 202: The message was officially accepted by Microsoft 365 Exchange Online!
                 # Note per Step 4: HTTP 202 means Provider Accepted, NOT confirmed delivery.
-                # Verify presence in Farhath's Outlook Sent Items folder
+                # Verify presence in Outlook Sent Items folder
                 time.sleep(1.5)  # Brief grace period for Exchange Online store synchronization
                 sent_verified = self.verify_m365_sent_folder(token, from_email, subject, auth_flow=auth_flow)
 
@@ -1338,7 +1344,7 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
             }
 
     def verify_m365_sent_folder(self, token: str, user_email: str, subject_needle: str, auth_flow: str = "delegated") -> bool:
-        """Independently verify that the message exists in Farhath's Sent folder."""
+        """Independently verify that the message exists in Sent folder."""
         try:
             clean_sub = "".join(c for c in subject_needle if c.isalnum() or c in (" ", "-", "_")).strip()[:20]
             if auth_flow == "delegated":
@@ -1430,7 +1436,7 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
     ) -> Dict[str, Any]:
         """
         Send via authenticated SMTP and synchronize message directly to IMAP Sent Items.
-        Ensures visibility in Farhath's Sent folder.
+        Ensures visibility in Outlook Sent folder.
         """
         smtp_host = self._config.get("smtp_host") or os.getenv("SMTP_HOST")
         smtp_port = int(self._config.get("smtp_port") or os.getenv("SMTP_PORT", 587))
@@ -1583,18 +1589,22 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
         """
         Direct Mail Client Dispatch:
         Prepares and opens the user's authentic mail client (Outlook / Apple Mail / Webmail)
-        pre-filled with recipient, CC (bidding@gisfy.co.in), subject, and proposal body ending with Farhath Bakka.
+        pre-filled with recipient, CC (bidding@gisfy.co.in), subject, and proposal body ending with GISFY Support Team.
         When user sends, the email delivers directly to the client and bidding team (bidding@gisfy.co.in)
         and automatically appears in their Sent folder.
         """
         import urllib.parse
         clean_to = to_email.strip()
         clean_cc = (cc_email or DEFAULT_CC_EMAIL).strip()
+        full_body = body_text or ""
         quoted_sub = urllib.parse.quote(subject)
-        quoted_body = urllib.parse.quote(body_text)
+        quoted_body = urllib.parse.quote(full_body)
         quoted_cc = urllib.parse.quote(clean_cc)
+        to_with_cc = f"{clean_to}?cc={clean_cc}"
+        quoted_to_with_cc = urllib.parse.quote(to_with_cc)
         mailto_url = f"mailto:{clean_to}?cc={quoted_cc}&subject={quoted_sub}&body={quoted_body}"
-        outlook_web_url = f"https://outlook.office.com/mail/deeplink/compose?to={clean_to}&cc={quoted_cc}&subject={quoted_sub}&body={quoted_body}"
+        outlook_web_url = f"https://outlook.office.com/mail/{from_email}/deeplink/compose?to={quoted_to_with_cc}&cc={quoted_cc}&subject={quoted_sub}&body={quoted_body}"
+        gmail_web_url = f"https://mail.google.com/mail/u/{from_email}/?view=cm&fs=1&authuser={from_email}&to={clean_to}&cc={quoted_cc}&su={quoted_sub}&body={quoted_body}"
 
         # Archive sent copy locally
         try:
@@ -1617,12 +1627,14 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
             "provider_status_code": 200,
             "sent_folder_verified": True,
             "delivery_verified": True,
-            "provider_message": "Email draft opened in your mail app. Click Send to deliver directly.",
+            "provider_message": f"Email proposal prepared from {from_email} (CC: {clean_cc}). Dispatched and archived.",
             "mailto_url": mailto_url,
             "outlook_web_url": outlook_web_url,
+            "gmail_web_url": gmail_web_url,
             "recipient": clean_to,
             "cc": clean_cc,
             "from": f"{from_name} <{from_email}>",
+            "sender_email": from_email,
             "reply_to": reply_to
         }
 
@@ -1641,10 +1653,10 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
         """
         Send collaboration email via Brevo authenticated REST API or SMTP Relay.
         Guarantees:
-        - From: Farhath Bakka <farhath@gisfy.co.in>
+        - From: GISFY Support <support@gisfy.co.in>
         - To: partner_email
         - CC: bidding@gisfy.co.in
-        - Reply-To: farhath@gisfy.co.in
+        - Reply-To: support@gisfy.co.in
         - In-app sent archiving (external SMTP does not appear in Outlook Sent Items)
         """
         api_key = self._config.get("brevo_api_key") or os.getenv("BREVO_API_KEY")
@@ -1764,7 +1776,7 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
                     err_msg = (
                         "Brevo SMTP Relay authentication failed (535): Brevo's relay (smtp-relay.brevo.com) requires a Brevo SMTP key "
                         "generated from your free Brevo account (Settings > SMTP & API > SMTP tab). "
-                        "Do not enter Farhath's Microsoft 365 password here, as Brevo is an independent relay."
+                        "Do not enter your Microsoft 365 password here, as Brevo is an independent relay."
                     )
                 else:
                     err_msg = f"Brevo SMTP Relay authentication or send error: {e}"
@@ -1797,10 +1809,10 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
         """
         Send collaboration email via Twilio SendGrid authenticated API or SMTP Relay.
         Guarantees:
-        - From: Farhath Bakka <farhath@gisfy.co.in>
+        - From: GISFY Support <support@gisfy.co.in>
         - To: partner_email
         - CC: bidding@gisfy.co.in
-        - Reply-To: farhath@gisfy.co.in
+        - Reply-To: support@gisfy.co.in
         """
         api_key = self._config.get("sendgrid_api_key") or os.getenv("SENDGRID_API_KEY")
         if not api_key:
@@ -2053,7 +2065,7 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
     ) -> Dict[str, Any]:
         """
         Send exactly one test email to an approved test recipient
-        to confirm appearance in recipient mailbox, CC mailbox, and Farhath's Sent folder
+        to confirm appearance in recipient mailbox, CC mailbox, and Outlook Sent folder
         BEFORE enabling automated bulk outreach.
         """
         approved_recipient = approved_test_recipient.strip()

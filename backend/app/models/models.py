@@ -109,6 +109,7 @@ class Partner(Base):
     empanelment_status = Column(String, nullable=True)
     turnover = Column(String, nullable=True)
     employee_count = Column(String, nullable=True)
+    country = Column(String, index=True, nullable=True)
     state = Column(String, index=True, nullable=True)
     city = Column(String, nullable=True)
     pan_india_presence = Column(Boolean, default=True)
@@ -121,6 +122,7 @@ class Partner(Base):
     synergy_roles = Column(Text, nullable=True)
     rating = Column(Float, default=4.8)
     status = Column(String, default="Available")
+    category = Column(String, default="STATE", index=True)  # 'STATE' (29 Indian States) | 'ADB' (Asian Development Bank & Multilateral)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -168,6 +170,9 @@ class CollaborationEmail(Base):
     status = Column(String, default="Draft", index=True)
     approval_status = Column(String, default="pending_approval", index=True)  # 'pending_approval', 'approved', 'rejected'
     is_draft = Column(Boolean, default=True)
+    scope = Column(String, default="state", index=True)  # 'state' (29 Indian States) | 'adb' (Asian Development Bank)
+    sender_email = Column(String, nullable=True, index=True)
+    sender_name = Column(String, nullable=True)
 
     approved_at = Column(DateTime, nullable=True)
     sent_at = Column(DateTime, nullable=True, index=True)
