@@ -179,7 +179,16 @@ export default function PartnerOutreachTab({ API_BASE, showToast }) {
     fetchDashboard();
     fetchDrafts();
     fetchProviderStatus();
-  }, []);
+
+    const interval = setInterval(() => {
+      fetchDashboard();
+      if (subTab === 'drafts') fetchDrafts();
+      if (subTab === 'sent') fetchSentEmails();
+      if (subTab === 'logs') fetchLogs();
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [subTab]);
 
   useEffect(() => {
     if (dashboard?.scheduler?.states_schedule?.time) {
