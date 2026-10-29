@@ -699,6 +699,22 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
         sendgrid_send_method = self._config.get("sendgrid_send_method", "api")
         sendgrid_configured = bool(sendgrid_api_key)
 
+        # Check Gmail App Password
+        gmail_app_pass = (
+            os.getenv("GMAIL_APP_PASSWORD") or
+            os.getenv("SMTP_PASSWORD_GMAIL") or
+            self._config.get("gmail_app_password")
+        )
+        gmail_configured = bool(gmail_app_pass)
+
+        # Check M365 SMTP Password
+        m365_smtp_pass = (
+            os.getenv("M365_SMTP_PASSWORD") or
+            self._config.get("smtp_password") or
+            os.getenv("SMTP_PASSWORD")
+        )
+        m365_configured = bool(m365_is_auth or m365_smtp_pass)
+
         # Active provider resolution:
         # Honor explicitly chosen provider if configured, otherwise default to direct_mail
         configured_override = self._config.get("active_provider")
@@ -706,7 +722,7 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
 
         if configured_override == "microsoft_365" and m365_is_auth:
             active_provider = "microsoft_365"
-        elif configured_override == "authenticated_smtp" and smtp_configured:
+        elif configured_override == "authenticated_smtp" and (smtp_configured or gmail_configured):
             active_provider = "authenticated_smtp"
         elif configured_override == "google_workspace" and google_configured:
             active_provider = "google_workspace"
@@ -719,7 +735,7 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
         else:
             active_provider = "direct_mail"
 
-        is_authenticated = True
+        is_authenticated = bool(gmail_configured or m365_configured or brevo_configured or sendgrid_configured or smtp_configured)
 
         def mask_id(val: Optional[str]) -> Optional[str]:
             if not val:
@@ -822,6 +838,20 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
                 "user": smtp_user or "Not set",
                 "has_password": smtp_has_pass,
                 "imap_sent_sync_enabled": bool(self._config.get("imap_sync", True))
+            },
+            "gmail_smtp": {
+                "is_configured": gmail_configured,
+                "host": "smtp.gmail.com",
+                "port": 587,
+                "user": "bidding.gisfy@gmail.com",
+                "has_password": gmail_configured
+            },
+            "m365_smtp": {
+                "is_configured": m365_configured,
+                "host": "smtp.office365.com",
+                "port": 587,
+                "user": DEFAULT_SENDER_EMAIL,
+                "has_password": bool(m365_smtp_pass)
             },
             "last_test_result": self._config.get("last_test_result"),
             "sent_folder_sync_supported": active_provider in ["microsoft_365", "authenticated_smtp", "google_workspace"],
@@ -1098,16 +1128,15 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
         from_name: str = DEFAULT_SENDER_NAME,
         from_email: str = DEFAULT_SENDER_EMAIL,
         reply_to: str = DEFAULT_REPLY_TO,
-        lock_key: Optional[str] = None
+        lock_key: Optional[str] = None,
+        allow_direct_fallback: bool = False
     ) -> Dict[str, Any]:
         """
         Execute real authenticated live dispatch through the detected provider.
         Guarantees:
-        - From: GISFY Support <support@gisfy.co.in>
-        - To: partner_email
-        - CC: bidding@gisfy.co.in
-        - Reply-To: support@gisfy.co.in
-        - Sent items synchronization (saveToSentItems: true)
+        - 29 States: Sent via bidding.gisfy@gmail.com -> smtp.gmail.com (TLS 587)
+        - ADB Partners: Sent via support@gisfy.co.in / farhath@gisfy.co.in / firza@gisfy.co.in -> Office 365 / Graph API
+        - Mandatory CC: bidding@gisfy.co.in
         - Duplicate prevention
         """
         if lock_key:
@@ -1120,33 +1149,131 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
             _active_sends.add(lock_key)
 
         try:
-            status_info = self.get_public_status()
-            if not status_info["is_authenticated"]:
-                return {
-                    "success": False,
-                    "status": "Failed",
-                    "provider_accepted": False,
-                    "error": "Live email provider is not authenticated. Please configure Brevo, SendGrid, Microsoft 365, or authenticated SMTP before sending real emails.",
-                    "provider": "unauthenticated"
-                }
+            self._load_config()
+            sender_clean = (from_email or DEFAULT_SENDER_EMAIL).strip().lower()
 
-            active_provider = status_info.get("active_provider", "direct_mail")
-
-            # 0. Direct Mail (Native Outlook / Mail Client - Default & Recommended)
-            if active_provider == "direct_mail":
-                return self._send_via_direct_mail(
-                    to_email=to_email,
-                    subject=subject,
-                    body_html=body_html,
-                    body_text=body_text,
-                    partner_name=partner_name,
-                    cc_email=cc_email,
-                    from_name=from_name,
-                    from_email=from_email,
-                    reply_to=reply_to
+            # ------------------------------------------------------------------
+            # CHANNEL 1: GMAIL (29 Indian States via bidding.gisfy@gmail.com)
+            # ------------------------------------------------------------------
+            if "gmail.com" in sender_clean:
+                gmail_pass = (
+                    os.getenv("GMAIL_APP_PASSWORD") or
+                    os.getenv("SMTP_PASSWORD_GMAIL") or
+                    os.getenv("GMAIL_PASSWORD") or
+                    self._config.get("gmail_app_password") or
+                    self._config.get("smtp_password") or
+                    (os.getenv("SMTP_PASSWORD") if "gmail" in (os.getenv("SMTP_HOST") or "").lower() else None)
                 )
+                if gmail_pass and gmail_pass.strip():
+                    return self._send_via_authenticated_smtp(
+                        to_email=to_email,
+                        subject=subject,
+                        body_html=body_html,
+                        body_text=body_text,
+                        cc_email=cc_email,
+                        from_name=from_name,
+                        from_email=from_email,
+                        reply_to=reply_to,
+                        custom_host="smtp.gmail.com",
+                        custom_port=587,
+                        custom_user=from_email,
+                        custom_pass=gmail_pass.strip()
+                    )
+                elif allow_direct_fallback:
+                    return self._send_via_direct_mail(
+                        to_email=to_email,
+                        subject=subject,
+                        body_html=body_html,
+                        body_text=body_text,
+                        partner_name=partner_name,
+                        cc_email=cc_email,
+                        from_name=from_name,
+                        from_email=from_email,
+                        reply_to=reply_to
+                    )
+                else:
+                    return {
+                        "success": False,
+                        "status": "Failed",
+                        "provider": "gmail_smtp",
+                        "error": (
+                            f"Live Delivery Blocked: Google requires a 16-character App Password to send live emails from {from_email}. "
+                            "Please enter GMAIL_APP_PASSWORD in backend/.env (generate at https://myaccount.google.com/apppasswords)."
+                        )
+                    }
 
-            # 1. Brevo (Authenticated Relay & REST API)
+            # ------------------------------------------------------------------
+            # CHANNEL 2: MICROSOFT 365 (ADB via support/farhath/firza@gisfy.co.in)
+            # ------------------------------------------------------------------
+            if "gisfy.co.in" in sender_clean or "office365" in (os.getenv("SMTP_HOST") or ""):
+                m365_has_refresh = bool(self._config.get("m365_refresh_token") or os.getenv("M365_REFRESH_TOKEN"))
+                m365_has_secret = bool(self._config.get("m365_client_secret") or os.getenv("M365_CLIENT_SECRET"))
+                m365_is_auth = bool(self._config.get("m365_authenticated")) and (m365_has_refresh or m365_has_secret)
+
+                if m365_is_auth:
+                    return self._send_via_microsoft_graph(
+                        to_email=to_email,
+                        subject=subject,
+                        body_html=body_html,
+                        partner_name=partner_name,
+                        cc_email=cc_email,
+                        from_name=from_name,
+                        from_email=from_email,
+                        reply_to=reply_to
+                    )
+
+                # Check for Microsoft 365 SMTP Password
+                user_prefix = sender_clean.split("@")[0].upper()
+                m365_pass = (
+                    os.getenv(f"SMTP_PASSWORD_{user_prefix}") or
+                    os.getenv("M365_SMTP_PASSWORD") or
+                    self._config.get("smtp_password") or
+                    os.getenv("SMTP_PASSWORD")
+                )
+                if m365_pass and m365_pass.strip():
+                    return self._send_via_authenticated_smtp(
+                        to_email=to_email,
+                        subject=subject,
+                        body_html=body_html,
+                        body_text=body_text,
+                        cc_email=cc_email,
+                        from_name=from_name,
+                        from_email=from_email,
+                        reply_to=reply_to,
+                        custom_host="smtp.office365.com",
+                        custom_port=587,
+                        custom_user=from_email,
+                        custom_pass=m365_pass.strip()
+                    )
+                elif allow_direct_fallback:
+                    return self._send_via_direct_mail(
+                        to_email=to_email,
+                        subject=subject,
+                        body_html=body_html,
+                        body_text=body_text,
+                        partner_name=partner_name,
+                        cc_email=cc_email,
+                        from_name=from_name,
+                        from_email=from_email,
+                        reply_to=reply_to
+                    )
+                else:
+                    return {
+                        "success": False,
+                        "status": "Failed",
+                        "provider": "microsoft_365",
+                        "error": (
+                            f"Live Delivery Blocked: Microsoft 365 password or OAuth credentials missing for {from_email}. "
+                            "Please enter M365_SMTP_PASSWORD in backend/.env or connect Microsoft 365 in Live Provider Setup."
+                        )
+                    }
+
+            # ------------------------------------------------------------------
+            # CHANNEL 3: OTHER CONFIGURED PROVIDERS (Brevo, SendGrid, Generic SMTP)
+            # ------------------------------------------------------------------
+            status_info = self.get_public_status()
+            active_provider = status_info.get("active_provider")
+
             if active_provider == "brevo":
                 return self._send_via_brevo(
                     to_email=to_email,
@@ -1160,7 +1287,6 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
                     reply_to=reply_to
                 )
 
-            # 2. SendGrid (Twilio Authenticated Relay & REST API)
             if active_provider == "sendgrid":
                 return self._send_via_sendgrid(
                     to_email=to_email,
@@ -1174,33 +1300,6 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
                     reply_to=reply_to
                 )
 
-            # 3. Microsoft 365 (Office 365 / Graph API - Preserved)
-            if active_provider == "microsoft_365":
-                return self._send_via_microsoft_graph(
-                    to_email=to_email,
-                    subject=subject,
-                    body_html=body_html,
-                    partner_name=partner_name,
-                    cc_email=cc_email,
-                    from_name=from_name,
-                    from_email=from_email,
-                    reply_to=reply_to
-                )
-
-            # 4. Google Workspace OAuth 2.0
-            if active_provider == "google_workspace":
-                return self._send_via_google_oauth(
-                    to_email=to_email,
-                    subject=subject,
-                    body_html=body_html,
-                    body_text=body_text,
-                    cc_email=cc_email,
-                    from_name=from_name,
-                    from_email=from_email,
-                    reply_to=reply_to
-                )
-
-            # 5. Authenticated SMTP with IMAP Sent Sync
             if active_provider == "authenticated_smtp":
                 return self._send_via_authenticated_smtp(
                     to_email=to_email,
@@ -1213,18 +1312,25 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
                     reply_to=reply_to
                 )
 
-            # Default fallback to direct_mail client dispatch
-            return self._send_via_direct_mail(
-                to_email=to_email,
-                subject=subject,
-                body_html=body_html,
-                body_text=body_text,
-                partner_name=partner_name,
-                cc_email=cc_email,
-                from_name=from_name,
-                from_email=from_email,
-                reply_to=reply_to
-            )
+            if allow_direct_fallback:
+                return self._send_via_direct_mail(
+                    to_email=to_email,
+                    subject=subject,
+                    body_html=body_html,
+                    body_text=body_text,
+                    partner_name=partner_name,
+                    cc_email=cc_email,
+                    from_name=from_name,
+                    from_email=from_email,
+                    reply_to=reply_to
+                )
+
+            return {
+                "success": False,
+                "status": "Failed",
+                "provider": "none",
+                "error": f"No active outbound email provider credentials configured for {from_email}."
+            }
         finally:
             if lock_key and lock_key in _active_sends:
                 _active_sends.remove(lock_key)
@@ -1432,16 +1538,20 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
         cc_email: str,
         from_name: str,
         from_email: str,
-        reply_to: str
+        reply_to: str,
+        custom_host: Optional[str] = None,
+        custom_port: Optional[int] = None,
+        custom_user: Optional[str] = None,
+        custom_pass: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Send via authenticated SMTP and synchronize message directly to IMAP Sent Items.
         Ensures visibility in Outlook Sent folder.
         """
-        smtp_host = self._config.get("smtp_host") or os.getenv("SMTP_HOST")
-        smtp_port = int(self._config.get("smtp_port") or os.getenv("SMTP_PORT", 587))
-        smtp_user = self._config.get("smtp_user") or os.getenv("SMTP_USER")
-        smtp_password = self._config.get("smtp_password") or os.getenv("SMTP_PASSWORD")
+        smtp_host = custom_host or self._config.get("smtp_host") or os.getenv("SMTP_HOST")
+        smtp_port = int(custom_port or self._config.get("smtp_port") or os.getenv("SMTP_PORT", 587))
+        smtp_user = custom_user or self._config.get("smtp_user") or os.getenv("SMTP_USER")
+        smtp_password = custom_pass or self._config.get("smtp_password") or os.getenv("SMTP_PASSWORD")
 
         if not (smtp_host and smtp_user and smtp_password):
             return {

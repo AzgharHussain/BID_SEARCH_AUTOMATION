@@ -553,6 +553,45 @@ def trigger_adb_rotation_dispatch_endpoint(quota: int = 50):
     }
 
 
+@router.post("/reset-simulated-drafts")
+def reset_simulated_drafts_endpoint(
+    scope: Optional[str] = Query(None, description="all, state, or adb"),
+    db: Session = Depends(get_db)
+):
+    """
+    Reset emails that were previously marked as sent via offline simulation ('direct_mail')
+    back to 'draft' status so they can be dispatched across real SMTP / Internet.
+    """
+    q = db.query(models.CollaborationEmail).filter(
+        models.CollaborationEmail.provider == "direct_mail",
+        models.CollaborationEmail.is_test_email == False
+    )
+    if scope and scope.lower() in ["state", "states"]:
+        q = q.filter(models.CollaborationEmail.scope == "state")
+    elif scope and scope.lower() == "adb":
+        q = q.filter(models.CollaborationEmail.scope == "adb")
+
+    count = 0
+    records = q.all()
+    for r in records:
+        r.status = "draft"
+        r.is_draft = True
+        r.sent_at = None
+        r.provider = None
+        r.provider_status_code = None
+        r.provider_message_id = None
+        r.sent_folder_verified = False
+        r.delivery_verified = False
+        count += 1
+
+    db.commit()
+    return {
+        "status": "success",
+        "reset_count": count,
+        "message": f"Successfully reset {count} simulated emails back to 'draft' status. They are now ready for live SMTP delivery."
+    }
+
+
 @router.post("/update-schedule-time")
 def update_schedule_time_endpoint(
     payload: Optional[ScheduleTimePayload] = None,
