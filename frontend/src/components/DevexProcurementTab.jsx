@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 
 // Priority Sector Icons
 const SECTOR_ICONS = {
@@ -14,6 +14,9 @@ const SECTOR_ICONS = {
 };
 
 export default function DevexProcurementTab({ API_BASE, showToast, onSelectIndianState }) {
+  // SWR in-memory cache for instant filter responses (0ms)
+  const devexCacheRef = useRef(new Map());
+
   // Source Filter State: 'DEVEX', 'ALL', 'STATES', 'ADB'
   const [sourceFilter, setSourceFilter] = useState('DEVEX');
 
@@ -103,32 +106,44 @@ export default function DevexProcurementTab({ API_BASE, showToast, onSelectIndia
     }
   }, [API_BASE]);
 
-  const fetchDevexOpportunities = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (selectedCountry !== 'ALL') params.set('country', selectedCountry);
-      if (selectedDonor !== 'ALL') params.set('donor', selectedDonor);
-      if (selectedSector !== 'ALL') params.set('sector', selectedSector);
-      if (selectedType !== 'ALL') params.set('opportunity_type', selectedType);
-      if (selectedStage !== 'ALL') params.set('pipeline_stage', selectedStage);
-      if (searchQuery.trim()) params.set('search', searchQuery.trim());
-      params.set('limit', '100');
+  const fetchDevexOpportunities = useCallback(async (forceRefresh = false) => {
+    const params = new URLSearchParams();
+    if (selectedCountry !== 'ALL') params.set('country', selectedCountry);
+    if (selectedDonor !== 'ALL') params.set('donor', selectedDonor);
+    if (selectedSector !== 'ALL') params.set('sector', selectedSector);
+    if (selectedType !== 'ALL') params.set('opportunity_type', selectedType);
+    if (selectedStage !== 'ALL') params.set('pipeline_stage', selectedStage);
+    if (searchQuery.trim()) params.set('search', searchQuery.trim());
+    params.set('limit', '100');
 
-      const res = await fetch(`${API_BASE}/api/devex/opportunities?${params.toString()}`);
+    const cacheKey = params.toString();
+    const cached = devexCacheRef.current.get(cacheKey);
+
+    if (cached && !forceRefresh) {
+      setOpportunities(cached.items || []);
+      setTotalCount(cached.total || 0);
+      if (cached.filters) setFilterChoices(cached.filters);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/api/devex/opportunities?${cacheKey}`);
       if (res.ok) {
         const data = await res.json();
+        devexCacheRef.current.set(cacheKey, data);
         setOpportunities(data.items || []);
         setTotalCount(data.total || 0);
         if (data.filters) {
           setFilterChoices(data.filters);
         }
       } else {
-        showToast?.('Failed to load Devex opportunities', 'error');
+        if (!cached) showToast?.('Failed to load Devex opportunities', 'error');
       }
     } catch (e) {
       console.error('Error loading devex opportunities:', e);
-      showToast?.('Network error loading Devex opportunities', 'error');
+      if (!cached) showToast?.('Network error loading Devex opportunities', 'error');
     } finally {
       setLoading(false);
     }
@@ -176,8 +191,9 @@ export default function DevexProcurementTab({ API_BASE, showToast, onSelectIndia
       if (res.ok) {
         const data = await res.json();
         showToast?.(`Sync Complete: Found ${data.opportunities_found} opportunities, ${data.documents_downloaded} documents.`, 'success');
+        devexCacheRef.current.clear();
         fetchSyncStatus();
-        fetchDevexOpportunities();
+        fetchDevexOpportunities(true);
       } else {
         showToast?.('Sync request failed', 'error');
       }

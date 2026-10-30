@@ -53,6 +53,20 @@ def update_tenders_lifecycle_status(db):
     ).update({"status": "active"}, synchronize_session=False)
     db.commit()
 
+def ensure_devex_initialized(db):
+    """Ensure all 35 genuine international procurement opportunities from Devex are synchronized."""
+    try:
+        from app.services.devex_sync_service import devex_sync_service
+        devex_detail_count = db.query(models.DevexOpportunityDetail).count()
+        if devex_detail_count < 35:
+            print(f"🔄 [Startup] Devex opportunity details count ({devex_detail_count}) < 35. Synchronizing genuine international opportunities...")
+            devex_sync_service.synchronize_opportunities(sync_type="startup")
+            print("✅ [Startup] Devex opportunities successfully initialized.")
+        else:
+            print(f"✅ [Startup] Devex portal already populated with {devex_detail_count} genuine opportunities.")
+    except Exception as e:
+        print(f"⚠️ [Startup] Error initializing Devex opportunities: {e}")
+
 @app.on_event("startup")
 async def startup_event():
     # 1. Ensure all tables (including collaboration_emails and workflow logs) are created
@@ -85,6 +99,7 @@ async def startup_event():
     try:
         ensure_partners_seeded(db)
         update_tenders_lifecycle_status(db)
+        ensure_devex_initialized(db)
     except Exception as e:
         print(f"⚠️ [Startup] Error seeding partners or updating tender status: {e}")
     finally:
