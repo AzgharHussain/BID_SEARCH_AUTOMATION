@@ -197,6 +197,7 @@ def list_collaboration_drafts(
     partner_id: Optional[int] = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(500, ge=1, le=5000),
+    include_body: bool = Query(False, description="Whether to include full body_html and body_text (false for ultra-fast list queries)"),
     db: Session = Depends(get_db)
 ):
     """List all collaboration email drafts with filtering across all 29 States and ADB."""
@@ -220,7 +221,6 @@ def list_collaboration_drafts(
     records = q.order_by(models.CollaborationEmail.id.asc()).offset(skip).limit(limit).all()
 
     results = []
-    cached_logo_src = get_gisfy_logo_src()
     for r in records:
         t = r.tender
         p = r.partner
@@ -233,10 +233,15 @@ def list_collaboration_drafts(
         from_address = f"{sender_name} <{sender_email}>"
         preferred_client = "outlook" if is_adb else "gmail"
 
-        hydrated_html = (r.body_html or "").replace("{{GISFY_LOGO_SRC}}", cached_logo_src)
-
         resolved_project = (t.title if t else None) or r.project_name or "Project Assignment"
         resolved_tender_id = (t.tender_id if t else None) or (f"REF-{r.tender_id}" if r.tender_id else "ADB-JV")
+
+        if include_body:
+            body_html_val = r.body_html or ""
+            body_text_val = r.body_text or ""
+        else:
+            body_html_val = ""
+            body_text_val = (r.body_text[:180] + "...") if r.body_text else ""
 
         results.append({
             "id": r.id,
@@ -260,8 +265,8 @@ def list_collaboration_drafts(
             "recipient_name": r.recipient_name,
             "recipient_email": r.recipient_email,
             "subject": r.subject,
-            "body_html": hydrated_html,
-            "body_text": r.body_text,
+            "body_html": body_html_val,
+            "body_text": body_text_val,
             "project_name": r.project_name or resolved_project,
             "project_overview": r.project_overview,
             "match_score": r.match_score,
@@ -285,6 +290,75 @@ def list_collaboration_drafts(
             "created_at": r.created_at.isoformat() if r.created_at else None
         })
     return results
+
+
+@router.get("/drafts/{id}")
+def get_collaboration_draft(id: int, db: Session = Depends(get_db)):
+    """Fetch complete details for a single collaboration email draft including full body."""
+    r = db.query(models.CollaborationEmail).filter(models.CollaborationEmail.id == id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Collaboration email record not found")
+    t = r.tender
+    p = r.partner
+    is_adb = bool(r.scope == "adb" or (t and t.state and "adb" in t.state.name.lower()) or (t and t.tender_id and t.tender_id.upper().startswith("ADB")))
+    scope_val = "adb" if is_adb else "state"
+    scope_label = "🌐 ADB Multilateral" if is_adb else f"🏛️ 29 States ({t.state.name if t and t.state else 'Domestic'})"
+    sender_email = r.sender_email or ("support@gisfy.co.in" if is_adb else "bidding.gisfy@gmail.com")
+    sender_name = r.sender_name or "N C Harika | Business Development Executive"
+    from_address = f"{sender_name} <{sender_email}>"
+    preferred_client = "outlook" if is_adb else "gmail"
+    resolved_project = (t.title if t else None) or r.project_name or "Project Assignment"
+    resolved_tender_id = (t.tender_id if t else None) or (f"REF-{r.tender_id}" if r.tender_id else "ADB-JV")
+
+    cached_logo_src = get_gisfy_logo_src()
+    hydrated_html = (r.body_html or "").replace("{{GISFY_LOGO_SRC}}", cached_logo_src)
+
+    return {
+        "id": r.id,
+        "tender_id": resolved_tender_id,
+        "tender_db_id": r.tender_id,
+        "tender_title": resolved_project,
+        "state_name": (t.state.name if (t and t.state) else None) or ("ADB Multilateral" if is_adb else "Pan-India"),
+        "scope": scope_val,
+        "scope_label": scope_label,
+        "is_adb": is_adb,
+        "sender_email": sender_email,
+        "sender_name": sender_name,
+        "from_address": from_address,
+        "preferred_client": preferred_client,
+        "partner_category": getattr(p, "category", "STATE") if p else ("ADB" if is_adb else "STATE"),
+        "partner_country": (getattr(p, "country", None) or getattr(p, "state", None)) if p else ("Regional" if is_adb else "India"),
+        "partner_state": p.state if p else None,
+        "submission_deadline": t.last_date.strftime("%d %b %Y") if (t and t.last_date) else None,
+        "partner_id": r.partner_id,
+        "company_name": r.company_name,
+        "recipient_name": r.recipient_name,
+        "recipient_email": r.recipient_email,
+        "subject": r.subject,
+        "body_html": hydrated_html,
+        "body_text": r.body_text or "",
+        "project_name": r.project_name or resolved_project,
+        "project_overview": r.project_overview,
+        "match_score": r.match_score,
+        "selection_reason": r.selection_reason,
+        "status": r.status,
+        "approval_status": r.approval_status,
+        "is_draft": r.is_draft,
+        "sent_at": r.sent_at.isoformat() if r.sent_at else None,
+        "follow_up_date": r.follow_up_date.isoformat() if r.follow_up_date else None,
+        "response_status": r.response_status or "none",
+        "response_snippet": r.response_snippet,
+        "response_received_at": r.response_received_at.isoformat() if r.response_received_at else None,
+        "last_error": r.last_error,
+        "provider": r.provider,
+        "provider_status_code": r.provider_status_code,
+        "provider_message_id": r.provider_message_id,
+        "sent_folder_verified": bool(r.sent_folder_verified),
+        "delivery_verified": bool(r.delivery_verified),
+        "delivery_verified_at": r.delivery_verified_at.isoformat() if r.delivery_verified_at else None,
+        "is_test_email": bool(r.is_test_email),
+        "created_at": r.created_at.isoformat() if r.created_at else None
+    }
 
 
 @router.get("/drafts/{id}/preview", response_class=HTMLResponse)

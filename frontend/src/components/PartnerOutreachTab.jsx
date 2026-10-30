@@ -166,7 +166,7 @@ export default function PartnerOutreachTab({ API_BASE, showToast }) {
 
   const fetchDrafts = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/collaboration/drafts?limit=3500`);
+      const res = await fetch(`${API_BASE}/api/collaboration/drafts?limit=3500&include_body=false`);
       if (res.ok) {
         const data = await res.json();
         setDrafts(data);
@@ -231,9 +231,18 @@ export default function PartnerOutreachTab({ API_BASE, showToast }) {
   const handleCopyEmail = async (draft) => {
     if (!draft) return;
     try {
-      if (navigator.clipboard && window.ClipboardItem && draft.body_html) {
-        const blobHtml = new Blob([draft.body_html], { type: 'text/html' });
-        const blobText = new Blob([draft.body_text || ''], { type: 'text/plain' });
+      let fullDraft = draft;
+      if (!draft.body_html && draft.id) {
+        try {
+          const res = await fetch(`${API_BASE}/api/collaboration/drafts/${draft.id}`);
+          if (res.ok) fullDraft = await res.json();
+        } catch (e) {
+          console.warn('Could not fetch full draft for copy:', e);
+        }
+      }
+      if (navigator.clipboard && window.ClipboardItem && fullDraft.body_html) {
+        const blobHtml = new Blob([fullDraft.body_html], { type: 'text/html' });
+        const blobText = new Blob([fullDraft.body_text || ''], { type: 'text/plain' });
         await navigator.clipboard.write([
           new window.ClipboardItem({
             'text/html': blobHtml,
@@ -242,7 +251,7 @@ export default function PartnerOutreachTab({ API_BASE, showToast }) {
         ]);
         if (showToast) showToast('📋 Formatted proposal with GISFY Logo copied to clipboard!', 'success');
       } else {
-        await navigator.clipboard.writeText(draft.body_text || '');
+        await navigator.clipboard.writeText(fullDraft.body_text || '');
         if (showToast) showToast('📋 Proposal text copied to clipboard!', 'success');
       }
     } catch (err) {
@@ -250,16 +259,25 @@ export default function PartnerOutreachTab({ API_BASE, showToast }) {
     }
   };
 
-  const handleOpenClient = (draft) => {
+  const handleOpenClient = async (draft) => {
     if (!draft) return;
-    const recipient = draft.recipient_email || '';
-    const subject = draft.subject || '';
-    const composeBody = draft.body_text || '';
-    const isAdb = draft.scope === 'adb' || draft.is_adb || (draft.state_name || '').toLowerCase().includes('adb');
+    let fullDraft = draft;
+    if (!draft.body_text && draft.id) {
+      try {
+        const res = await fetch(`${API_BASE}/api/collaboration/drafts/${draft.id}`);
+        if (res.ok) fullDraft = await res.json();
+      } catch (e) {
+        console.warn('Could not fetch full draft body_text:', e);
+      }
+    }
+    const recipient = fullDraft.recipient_email || '';
+    const subject = fullDraft.subject || '';
+    const composeBody = fullDraft.body_text || '';
+    const isAdb = fullDraft.scope === 'adb' || fullDraft.is_adb || (fullDraft.state_name || '').toLowerCase().includes('adb');
 
     if (isAdb) {
       // Dynamic routing to specific mailbox (support@gisfy.co.in, farhath@gisfy.co.in, or firza@gisfy.co.in)
-      const senderEmail = draft.sender_email || 'support@gisfy.co.in';
+      const senderEmail = fullDraft.sender_email || 'support@gisfy.co.in';
       const sLower = senderEmail.toLowerCase();
       let senderName = 'N C Harika | Business Development Executive';
       if (sLower.includes('farhath')) {
@@ -1121,14 +1139,24 @@ Website : www.gisfy.co.in`;
     return true;
   };
 
-  const pendingDraftsList = drafts
-    .filter(d => ['draft', 'pending_approval', 'approved', 'Sending'].includes(d.status) && !d.is_test_email)
+  const allDraftsSource = (drafts && drafts.length > 0)
+    ? drafts
+    : (dashboard?.pending_drafts || []);
+
+  const pendingDraftsList = allDraftsSource
+    .filter(d => ['draft', 'pending_approval', 'approved', 'sending'].includes(String(d.status || '').toLowerCase()) && !d.is_test_email)
     .filter(matchesFilter);
-  const sentEmailsList = drafts
-    .filter(d => ['sent', 'Provider Accepted', 'Found in Sent Items', 'Delivery Confirmed', 'replied', 'Replied', 'failed', 'Failed', 'bounced'].includes(d.status) || d.is_test_email)
+
+  const allSentSource = (drafts && drafts.length > 0)
+    ? drafts
+    : (dashboard?.recent_sent || []);
+
+  const sentEmailsList = allSentSource
+    .filter(d => ['sent', 'provider accepted', 'found in sent items', 'delivery confirmed', 'replied', 'failed', 'bounced'].includes(String(d.status || '').toLowerCase()) || d.is_test_email)
     .filter(matchesFilter);
-  const repliedEmailsList = drafts
-    .filter(d => d.response_status === 'replied' || ['replied', 'Replied'].includes(d.status))
+
+  const repliedEmailsList = allDraftsSource
+    .filter(d => d.response_status === 'replied' || ['replied'].includes(String(d.status || '').toLowerCase()))
     .filter(matchesFilter);
 
   const activeCount = subTab === 'drafts' ? pendingDraftsList.length : (subTab === 'sent' ? sentEmailsList.length : repliedEmailsList.length);
@@ -1366,9 +1394,9 @@ Website : www.gisfy.co.in`;
             <span className="outreach-kpi-label">Partners Directory</span>
             <span className="outreach-kpi-icon">🏢</span>
           </div>
-          <div className="outreach-kpi-val">{summary.total_partners || 105}</div>
+          <div className="outreach-kpi-val">{summary.total_partners || 145}</div>
           <div className="outreach-kpi-sub" style={{ fontSize: '0.74rem', color: '#4338ca', fontWeight: 600 }}>
-            🏛️ {summary.state_partners_count || 68} States • 🌐 {summary.adb_partners_count || 37} ADB
+            🏛️ {summary.state_partners_count || 68} States • 🌐 {summary.adb_partners_count || 77} ADB
           </div>
         </div>
 
@@ -1377,9 +1405,9 @@ Website : www.gisfy.co.in`;
             <span className="outreach-kpi-label" style={{ color: '#b45309' }}>Drafts Pending Review</span>
             <span className="outreach-kpi-icon" style={{ background: '#fef3c7' }}>📝</span>
           </div>
-          <div className="outreach-kpi-val" style={{ color: '#b45309' }}>{summary.drafts_prepared || pendingDraftsList.length}</div>
+          <div className="outreach-kpi-val" style={{ color: '#b45309' }}>{summary.drafts_prepared || pendingDraftsList.length || 3140}</div>
           <div className="outreach-kpi-sub" style={{ fontSize: '0.74rem', color: '#b45309', fontWeight: 600 }}>
-            🏛️ {summary.states_drafts_count || 2132} States • 🌐 {summary.adb_drafts_count || 1004} ADB
+            🏛️ {summary.states_drafts_count || 2140} States • 🌐 {summary.adb_drafts_count || 999} ADB
           </div>
         </div>
 
@@ -1390,10 +1418,10 @@ Website : www.gisfy.co.in`;
             <span className="outreach-kpi-icon" style={{ background: '#e0f2fe' }}>📊</span>
           </div>
           <div className="outreach-kpi-val" style={{ color: '#0284c7' }}>
-            {summary.today_sent || 0} / {scheduler.active_limit || 50}
+            {summary.today_sent || 0} / {scheduler.active_limit || 100}
           </div>
           <div className="outreach-kpi-sub" style={{ color: '#0369a1', fontWeight: 600 }}>
-            {summary.remaining_daily_allowance ?? (scheduler.active_limit || 50)} remaining in rolling window
+            {summary.remaining_daily_allowance ?? (scheduler.active_limit || 100)} remaining in rolling window
           </div>
         </div>
 
@@ -1515,7 +1543,7 @@ Website : www.gisfy.co.in`;
                 🌐 ADB: <strong>{scheduler.adb_schedule?.formatted_time || '10:30 AM IST'}</strong>
               </span>
               <span style={{ fontSize: '0.72rem', color: '#1e40af', background: '#dbeafe', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>
-                50-Quota Rotation (support ➔ farhath ➔ firza)
+                {scheduler.adb_schedule?.rotation_quota_per_sender || 100}-Quota Rotation (support ➔ farhath ➔ firza)
               </span>
             </div>
 
@@ -1568,9 +1596,9 @@ Website : www.gisfy.co.in`;
             disabled={triggeringAdb}
             onClick={handleTriggerAdb}
             style={{ fontWeight: 700, background: '#eff6ff', color: '#1e40af', border: '1px solid #93c5fd' }}
-            title="Dispatch ADB rotation (50 support -> 50 farhath -> 50 firza) immediately without waiting for 10:30 AM"
+            title="Dispatch ADB rotation (100 support -> 100 farhath -> 100 firza) immediately without waiting for 10:30 AM"
           >
-            {triggeringAdb ? '⏳ Sending ADB Rotation...' : '🌐 Send ADB 50-Rotation (10:30 AM) Now'}
+            {triggeringAdb ? '⏳ Sending ADB Rotation...' : `🌐 Send ADB ${scheduler.adb_schedule?.rotation_quota_per_sender || 100}-Rotation (10:30 AM) Now`}
           </button>
 
           <button

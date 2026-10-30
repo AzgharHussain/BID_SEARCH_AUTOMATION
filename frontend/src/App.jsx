@@ -39,6 +39,10 @@ export const API_BASE = import.meta.env.VITE_API_BASE !== undefined
   ? import.meta.env.VITE_API_BASE
   : (typeof window !== 'undefined' && (
       window.location.port === '5173' || 
+      window.location.port === '5174' || 
+      window.location.port === '5175' || 
+      window.location.port === '3000' || 
+      window.location.port === '4173' || 
       window.location.port === '7035' || 
       window.location.port === '80' || 
       window.location.port === '443' || 
