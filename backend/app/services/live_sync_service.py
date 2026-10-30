@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 from pathlib import Path
 
+from sqlalchemy import func, or_, and_
 from app.db.database import SessionLocal
 from app.models import models
 from app.services.document_service import log_scraper_event, STORAGE_ROOT
@@ -270,14 +271,6 @@ class LiveSyncService:
         now = datetime.utcnow()
 
         for candidate in LIVE_PORTAL_NEW_TENDERS_FEED:
-            # Check if tender already exists in database
-            existing_tender = db.query(models.Tender).filter(
-                models.Tender.tender_id == candidate["tender_id"]
-            ).first()
-
-            if existing_tender:
-                continue
-
             # Find matching state
             state = db.query(models.State).filter(
                 models.State.name == candidate["state_name"]
@@ -288,6 +281,20 @@ class LiveSyncService:
                 db.add(state)
                 db.commit()
                 db.refresh(state)
+
+            # Check if tender already exists by tender_id OR (state_id + title)
+            existing_tender = db.query(models.Tender).filter(
+                or_(
+                    models.Tender.tender_id == candidate["tender_id"],
+                    and_(
+                        models.Tender.state_id == state.id,
+                        func.lower(func.trim(models.Tender.title)) == func.lower(func.trim(candidate["title"]))
+                    )
+                )
+            ).first()
+
+            if existing_tender:
+                continue
 
             # Find or create keyword
             kw_name = candidate["keyword"]
@@ -313,9 +320,14 @@ class LiveSyncService:
                 portal_tender_url=state.portal_url or "https://eprocure.gov.in"
             )
             new_tender.keywords.append(keyword)
-            db.add(new_tender)
-            db.commit()
-            db.refresh(new_tender)
+            try:
+                db.add(new_tender)
+                db.commit()
+                db.refresh(new_tender)
+            except Exception as e:
+                db.rollback()
+                log_scraper_event(f"Skipping duplicate candidate {candidate['tender_id']}: {e}", "warning")
+                continue
 
             log_scraper_event(
                 f"[PORTAL DETECTED] 🆕 Newly published tender on {state.name} portal: Ref #{new_tender.tender_id} ('{new_tender.title[:65]}...'). Ingesting attached documents...",
@@ -419,7 +431,21 @@ class LiveSyncService:
         ts_suffix = f"{int(time.time() * 1000) % 10000000}_{random.randint(10, 99)}"
         seq_id = f"2026_{target_state.name[:3].upper()}_{ts_suffix}"
 
-        full_title = f"{chosen_kw}-Based {title_suffix}"
+        base_title = f"{chosen_kw}-Based {title_suffix}"
+
+        # Check if base_title already exists for this state to strictly adhere to idx_tenders_state_title
+        existing_matches = db.query(models.Tender).filter(
+            models.Tender.state_id == target_state.id,
+            func.lower(func.trim(models.Tender.title)).like(f"{base_title.lower()}%")
+        ).count()
+
+        if existing_matches > 0:
+            phase_tags = ["Phase II", "Package B", "Zone-3", "Extension", "Component-IV", f"Batch-{existing_matches + 1}"]
+            phase = phase_tags[(existing_matches - 1) % len(phase_tags)]
+            full_title = f"{base_title} ({phase} - Ref {ts_suffix[-4:]})"
+        else:
+            full_title = base_title
+
         full_desc = f"Notice No: {target_state.name[:3].upper()}/TENDER/{ts_suffix}/2026-27 | Official state competitive bidding for comprehensive technical implementation, spatial mapping, and digital data verification."
 
         kw_obj = db.query(models.Keyword).filter(models.Keyword.keyword == chosen_kw).first()
@@ -443,9 +469,14 @@ class LiveSyncService:
             portal_tender_url=target_state.portal_url or 'https://eprocure.gov.in'
         )
         new_tender.keywords.append(kw_obj)
-        db.add(new_tender)
-        db.commit()
-        db.refresh(new_tender)
+        try:
+            db.add(new_tender)
+            db.commit()
+            db.refresh(new_tender)
+        except Exception as insert_err:
+            db.rollback()
+            log_scraper_event(f"Skipping duplicate dynamically generated tender: {insert_err}", "warning")
+            return None
 
         doc_defs = [
             (f"Tendernotice_{seq_id}.pdf", ".pdf"),

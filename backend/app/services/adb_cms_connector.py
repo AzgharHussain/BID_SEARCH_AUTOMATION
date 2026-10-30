@@ -115,9 +115,12 @@ def parse_date_safely(date_str: str) -> Optional[datetime]:
     return None
 
 
-def sanitize_filename(name: str) -> str:
-    """Remove unsafe characters from filenames."""
-    return re.sub(r'[\\/*?:"<>|]', "_", name).strip()
+def sanitize_filename(name: str, max_length: Optional[int] = None) -> str:
+    """Remove unsafe characters from filenames and optionally truncate length."""
+    clean = re.sub(r'[\\/*?:"<>|]', "_", str(name or "")).strip()
+    if max_length and len(clean) > max_length:
+        clean = clean[:max_length].rstrip(" _-")
+    return clean
 
 
 class AdbCmsConnector:
