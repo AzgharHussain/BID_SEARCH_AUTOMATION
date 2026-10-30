@@ -46,12 +46,19 @@ def extract_project_scope_overview(tender: models.Tender) -> Dict[str, Any]:
     if not domains:
         domains = ["Enterprise GIS Solutions", "Digital Surveying & Geodatabase Engineering"]
 
+    # Dynamically generate technical scope based on project/tender without repeating static text
+    from app.services.collaboration_email_service import generate_project_technical_scope
+    scope_para, sec_phrase, _ = generate_project_technical_scope(
+        title=title,
+        description=tender.description or "",
+        department=dept,
+        keywords_str=combined_text
+    )
+
     # Build 2-5 line tailored Project Overview
-    # Must capture: objectives, scope of work, key technical requirements, and expected outcomes
     overview_lines = [
         f"The {dept} ({state_name}) has issued Tender #{tender_id} for '{title}'.",
-        f"The assignment encompasses comprehensive field data acquisition, high-precision geospatial surveys, and the deployment of an enterprise WebGIS digital database.",
-        f"Key technical requirements involve {', '.join(domains[:3])}, quality assurance, and integration with public infrastructure monitoring systems.",
+        scope_para,
         f"The expected outcome is a centralized, authoritative digital spatial asset registry and analytics platform with bid submission closing on {deadline}."
     ]
     overview_text = " ".join(overview_lines)

@@ -1954,8 +1954,22 @@ def generate_outreach_proposal(db: Session, payload: schemas.OutreachProposalReq
         sender_dept = "29 Indian States Tendering & Domestic Consortiums"
         from_address = f"{contact_name} <{contact_email}>"
 
-    from app.services.collaboration_email_service import extract_project_scope_lines
-    scope_text = extract_project_scope_lines(getattr(tender, "description", None), sec_phrase)
+    from app.services.collaboration_email_service import generate_project_technical_scope, clean_project_title
+
+    kw_str = " ".join([k.keyword for k in getattr(tender, "keywords", [])]) if tender and getattr(tender, "keywords", None) else ""
+    proj_sec = getattr(getattr(tender, "adb_details", None), "project_sector", None) if tender else None
+    scope_work = getattr(getattr(tender, "adb_details", None), "scope_of_work", "") if tender else ""
+    raw_title = getattr(tender, "title", "") if tender else payload.project_name or ""
+    clean_title = clean_project_title(raw_title)
+
+    technical_scope_para, sec_phrase, sec_title = generate_project_technical_scope(
+        title=raw_title,
+        description=getattr(tender, "description", "") if tender else payload.project_overview or "",
+        project_sector=proj_sec,
+        department=getattr(tender, "department", "") if tender else "",
+        keywords_str=kw_str,
+        scope_of_work=scope_work
+    )
 
     letter_text = f"""Dear Team,
 
@@ -1963,23 +1977,19 @@ Greetings from GISFY Private Limited, India.
 
 We are an ISO-certified technology company specialising in Geographic Information Systems (GIS), WebGIS, Artificial Intelligence and Machine Learning (AI/ML), data analytics, Management Information Systems (MIS), cloud solutions, and digital transformation.
 
-We are currently exploring a potential Joint Venture (JV) / Consortium partnership with your organisation to collaborate and work together for an upcoming {sec_phrase}.
+We are currently exploring a potential Joint Venture (JV) / Consortium partnership with your organisation to collaborate and work together for the following project:
 
-{scope_text}
+{technical_scope_para}
 
 Considering your organisation's expertise and experience, we believe there are strong synergies for mutual collaboration in the joint execution and implementation of this project.
 
 If your organisation is interested in exploring this partnership opportunity, we kindly request you to share the following preliminary documents for our mutual evaluation:
 
-• Company Profile – Highlighting technical capabilities, core competencies, and areas of expertise.
-
-• Company Registration Certificate – Valid documentation confirming legal registration.
-
-• Tax Registration Certificate – Applicable tax registration documents.
-
-• CVs of Key Experts – Profiles of qualified professionals and technical specialists.
-
-• Relevant Project Experience – Overview of similar completed or ongoing projects.
+Company Profile – Highlighting technical capabilities, core competencies, and areas of expertise.
+Company Registration Certificate – Valid documentation confirming legal registration.
+Tax Registration Certificate – Applicable tax registration documents.
+CVs of Key Experts – Profiles of qualified professionals and technical specialists.
+Relevant Project Experience – Overview of similar completed or ongoing projects.
 
 Upon receiving and reviewing these details, we would be pleased to schedule an introductory discussion and share a draft Joint Venture / Consortium Agreement for your review and mutual consideration.
 
@@ -1990,7 +2000,7 @@ Thanks & Regards,
 GISFY Private Limited, Ground Floor, DSL Abacus IT Park,
 Uppal, Hyderabad, Telangana – 500039, India
 Mobile: +91 90631 20678
-Website: www.gisfy.co.in
+Website : www.gisfy.co.in
 """
 
     # Update collaboration status in DB to 'Outreach Sent'
@@ -2064,10 +2074,24 @@ def send_collaboration_outreach_email(
         from_address = f"{contact_name} <{contact_email}>"
         sender_dept = "29 Indian States Tendering & Domestic Consortiums"
 
-    cc_recipients = ["bidding@gisfy.co.in"]
+    cc_recipients = []
 
-    from app.services.collaboration_email_service import extract_project_scope_lines
-    scope_text = extract_project_scope_lines(getattr(tender, "description", None), sec_phrase)
+    from app.services.collaboration_email_service import generate_project_technical_scope, clean_project_title
+
+    kw_str = " ".join([k.keyword for k in getattr(tender, "keywords", [])]) if tender and getattr(tender, "keywords", None) else ""
+    proj_sec = getattr(getattr(tender, "adb_details", None), "project_sector", None) if tender else None
+    scope_work = getattr(getattr(tender, "adb_details", None), "scope_of_work", "") if tender else ""
+    raw_title = getattr(tender, "title", "") if tender else payload.project_name or ""
+    clean_title = clean_project_title(raw_title)
+
+    technical_scope_para, sec_phrase, sec_title = generate_project_technical_scope(
+        title=raw_title,
+        description=getattr(tender, "description", "") if tender else payload.project_overview or "",
+        project_sector=proj_sec,
+        department=getattr(tender, "department", "") if tender else "",
+        keywords_str=kw_str,
+        scope_of_work=scope_work
+    )
 
     letter_text = f"""Dear Team,
 
@@ -2075,25 +2099,21 @@ Greetings from GISFY Private Limited, India.
 
 We are an ISO-certified technology company specialising in Geographic Information Systems (GIS), WebGIS, Artificial Intelligence and Machine Learning (AI/ML), data analytics, Management Information Systems (MIS), cloud solutions, and digital transformation.
 
-We are currently exploring a potential Joint Venture (JV) / Consortium partnership with your organisation to collaborate and work together for an upcoming {sec_phrase}.
+We are currently exploring a potential Joint Venture (JV) / Consortium partnership with your organisation to collaborate and work together for the following project:
 
-{scope_text}
+{technical_scope_para}
 
-Considering your organisation's expertise and experience, we believe there may be valuable opportunities for collaboration in the joint submission and implementation of this assignment, subject to the applicable procurement requirements.
+Considering your organisation's expertise and experience, we believe there are strong synergies for mutual collaboration in the joint execution and implementation of this project.
 
-If your organisation is interested in exploring this partnership opportunity, we kindly request you to share the following documents for our preliminary evaluation:
+If your organisation is interested in exploring this partnership opportunity, we kindly request you to share the following preliminary documents for our mutual evaluation:
 
-• Company Profile – Highlighting your organisation's technical capabilities, core competencies, and areas of expertise.
+Company Profile – Highlighting technical capabilities, core competencies, and areas of expertise.
+Company Registration Certificate – Valid documentation confirming legal registration.
+Tax Registration Certificate – Applicable tax registration documents.
+CVs of Key Experts – Profiles of qualified professionals and technical specialists.
+Relevant Project Experience – Overview of similar completed or ongoing projects.
 
-• Company Registration Certificate – Valid documentation confirming the legal registration of your organisation.
-
-• Tax Registration Certificate – Applicable tax registration documents issued by the relevant authorities.
-
-• CVs of Key Experts – Profiles of qualified professionals with expertise relevant to the proposed assignment.
-
-• Relevant Project Experience – Details of similar completed or ongoing projects, including project descriptions, scope of work, client details, and your organisation's role.
-
-Upon receiving and reviewing the above documents, we would be pleased to discuss the proposed collaboration structure and share a draft Joint Venture / Consortium Agreement for your review and mutual consideration.
+Upon receiving and reviewing these details, we would be pleased to schedule an introductory discussion and share a draft Joint Venture / Consortium Agreement for your review and mutual consideration.
 
 We look forward to your positive response and the opportunity to establish a mutually beneficial partnership.
 
@@ -2102,7 +2122,7 @@ Thanks & Regards,
 GISFY Private Limited, Ground Floor, DSL Abacus IT Park,
 Uppal, Hyderabad, Telangana – 500039, India
 Mobile: +91 90631 20678
-Website: www.gisfy.co.in
+Website : www.gisfy.co.in
 """
 
     html_content = build_collaboration_email_html(
@@ -2114,7 +2134,7 @@ Website: www.gisfy.co.in
         custom_notes=payload.custom_message,
         gisfy_name=contact_name,
         gisfy_email=contact_email,
-        cc_email="bidding@gisfy.co.in"
+        cc_email=None
     )
 
     # Collect all intended recipients: original partner email + any user-specified recipients
@@ -2136,7 +2156,7 @@ Website: www.gisfy.co.in
 
     target_partner_email = (partner.email or (recipients[0] if recipients else "support@gisfy.co.in")).strip()
 
-    # Step 5 Rolling 24-hour Quota Check (Max 50)
+    # Step 5 Rolling 24-hour Quota Check (Max 100)
     from app.services.collaboration_scheduler import collaboration_scheduler
     sent_24h = collaboration_scheduler.get_rolling_24h_sent_count(db)
     active_limit = collaboration_scheduler.pilot_limit if collaboration_scheduler.pilot_mode else collaboration_scheduler.max_daily_limit
@@ -2156,7 +2176,7 @@ Website: www.gisfy.co.in
         body_html=html_content,
         body_text=letter_text,
         partner_name=partner.name,
-        cc_email="bidding@gisfy.co.in",
+        cc_email=None,
         from_name=contact_name,
         from_email=contact_email,
         reply_to=contact_email,
@@ -2185,7 +2205,7 @@ Website: www.gisfy.co.in
         tender.id,
         partner.id,
         status=status_label,
-        notes=f"Accepted by {dispatch_res.get('provider')} (Code: {dispatch_res.get('provider_status_code')}) from {from_address} to {target_partner_email} (CC: bidding@gisfy.co.in). Sent folder verified: {dispatch_res.get('sent_folder_verified')}"
+        notes=f"Accepted by {dispatch_res.get('provider')} (Code: {dispatch_res.get('provider_status_code')}) from {from_address} to {target_partner_email}. Sent folder verified: {dispatch_res.get('sent_folder_verified')}"
     )
 
     return {
@@ -2203,7 +2223,7 @@ Website: www.gisfy.co.in
         "outlook_web_url": dispatch_res.get("outlook_web_url"),
         "is_adb": is_adb,
         "recipients": [target_partner_email],
-        "cc_recipients": ["bidding@gisfy.co.in"],
+        "cc_recipients": [],
         "partner_name": partner.name,
         "partner_email": partner.email,
         "subject": subject,
@@ -2249,40 +2269,13 @@ def get_collaboration_stats(db: Session) -> Dict[str, Any]:
 
 def auto_dispatch_collaboration_email_for_tender(db: Session, tender_id: int) -> Optional[Dict[str, Any]]:
     """
-    Automatically identify top high-synergy collaboration partner for a tender and
-    dispatch the executive Letter of Intent / Consortium Opportunity email to team members.
+    Auto-match partner for tender.
+    NOTE: Live outbound email sending is DISABLED until user explicitly approves and verifies.
     """
-    from app.services.email_service import get_team_members, log_email_event
+    from app.services.collaboration_scheduler import collaboration_scheduler
+    from app.services.email_service import log_email_event
 
-    try:
-        res = search_partners_for_tender(db=db, tender_id=tender_id, min_score=80.0)
-        partners = res.get("partners") or res.get("matched_partners", [])
-        if not partners:
-            return None
-
-        top_partner = partners[0]
-        partner_email = top_partner.get("email")
-        recipients = [partner_email] if partner_email else []
-
-        tender_obj = db.query(models.Tender).filter(models.Tender.id == tender_id).first()
-        is_adb = bool(tender_obj and ((tender_obj.state and "adb" in tender_obj.state.name.lower()) or (tender_obj.tender_id and str(tender_obj.tender_id).upper().startswith("ADB"))))
-
-        payload = schemas.CollaborationEmailDispatchRequest(
-            tender_id=tender_id,
-            partner_id=top_partner["id"],
-            proposed_jv_split="60% Lead Bidder (GISFY) : 40% Specialized Partner",
-            recipients=recipients,
-            gisfy_contact_name="GISFY Support Team" if is_adb else "GISFY Bidding Operations Team",
-            gisfy_contact_email="support@gisfy.co.in" if is_adb else "bidding.gisfy@gmail.com",
-            custom_message=f"Automated JV matching: {top_partner['name']} selected with {top_partner.get('match_score', 95)}% compatibility score."
-        )
-        dispatch_result = send_collaboration_outreach_email(db, payload)
-        log_email_event(
-            f"[AUTO COLLABORATION] 🤝 Automatically matched #{tender_id} with partner '{top_partner['name']}' ({top_partner.get('match_score')}% match) & dispatched LOI email.",
-            "success"
-        )
-        return dispatch_result
-    except Exception as e:
-        log_email_event(f"[AUTO COLLABORATION ERROR] Failed to auto-dispatch collaboration email for tender #{tender_id}: {e}", "error")
+    if not getattr(collaboration_scheduler, "auto_send_enabled", False):
+        log_email_event(f"[AUTO COLLABORATION] Auto-send disabled pending user verification. No emails sent for tender #{tender_id}.", "info")
         return None
 

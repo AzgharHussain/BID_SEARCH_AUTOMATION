@@ -368,13 +368,7 @@ class LiveSyncService:
             if not any(t.get("tender_id") == tender_info["tender_id"] for t in self.recent_new_tenders):
                 self.recent_new_tenders.append(tender_info)
 
-            try:
-                from app.services.email_service import send_automatic_new_proposal_alert
-                send_automatic_new_proposal_alert(tender_info)
-                from app.services.partner_service import auto_dispatch_collaboration_email_for_tender
-                auto_dispatch_collaboration_email_for_tender(db, new_tender.id)
-            except Exception as mail_err:
-                log_scraper_event(f"[ALERT EMAIL] Automatic email dispatch: {mail_err}", "info")
+            # Note: Outbound automated emails disabled pending user verification
 
             # Ingest 1 tender per cycle to simulate real-time portal publishing
             if ingested_count >= 1:
@@ -502,13 +496,7 @@ class LiveSyncService:
         if not any(t.get("tender_id") == tender_info["tender_id"] for t in self.recent_new_tenders):
             self.recent_new_tenders.append(tender_info)
 
-        try:
-            from app.services.email_service import send_automatic_new_proposal_alert
-            send_automatic_new_proposal_alert(tender_info)
-            from app.services.partner_service import auto_dispatch_collaboration_email_for_tender
-            auto_dispatch_collaboration_email_for_tender(db, new_tender.id)
-        except Exception as mail_err:
-            log_scraper_event(f"[ALERT EMAIL] Automatic email dispatch: {mail_err}", "info")
+        # Note: Outbound automated emails disabled pending user verification
 
         log_scraper_event(
             f"[PORTAL DETECTED] 🔔 Newly published tender on {target_state.name} portal: Ref #{new_tender.tender_id} ('{new_tender.title[:65]}...'). Ingested and ready on website.",

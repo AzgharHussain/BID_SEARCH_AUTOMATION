@@ -874,12 +874,17 @@ def view_proposals_excel_table(
 @router.get("/download-codebase-zip")
 def download_codebase_zip():
     """Serve the complete codebase ZIP archive for sharing with developers."""
-    zip_path = Path("/Users/gisfymac3/Desktop/Automated Proposals/GISFY_Automated_Proposals_Full_Codebase.zip")
+    base_dir = Path(__file__).resolve().parent.parent.parent
+    zip_path = base_dir / "GISFY_Automated_Proposals_Full_Codebase.zip"
     if not zip_path.exists():
-        raise HTTPException(
-            status_code=404, 
-            detail="Codebase ZIP is currently being finalized. Please refresh in a moment."
-        )
+        legacy_path = Path("/Users/gisfymac3/Desktop/Automated Proposals/GISFY_Automated_Proposals_Full_Codebase.zip")
+        if legacy_path.exists():
+            zip_path = legacy_path
+        else:
+            raise HTTPException(
+                status_code=404, 
+                detail="Codebase ZIP is currently being finalized. Please refresh in a moment."
+            )
 
     headers = {
         "Content-Disposition": 'attachment; filename="GISFY_Automated_Proposals_Full_Codebase.zip"',

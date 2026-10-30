@@ -3029,7 +3029,6 @@ export default function AdbCmsTab({ API_BASE, showToast, onSelectIndianState }) 
                 <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '8px', padding: '0.65rem 0.85rem', marginBottom: '0.65rem', fontSize: '0.78rem', color: '#065f46', lineHeight: 1.5 }}>
                   ✉️ <b>Verified Email Transmission Headers:</b><br />
                   • <b>From:</b> GISFY Support &lt;support@gisfy.co.in&gt;<br />
-                  • <b>CC:</b> bidding@gisfy.co.in<br />
                   • <b>Reply-To:</b> support@gisfy.co.in<br />
                   • <b>To Recommended Partner:</b> <b>{outreachPartner?.name}</b> &lt;{outreachPartner?.email || 'N/A'}&gt;
                 </div>
@@ -3056,7 +3055,7 @@ export default function AdbCmsTab({ API_BASE, showToast, onSelectIndianState }) 
                     {collabSendingEmail ? '⏳ Dispatching Collaboration Email...' : '🚀 Send Collaboration Email to Partner'}
                   </button>
                   <a 
-                    href={`https://outlook.office.com/mail/support@gisfy.co.in/deeplink/compose?to=${encodeURIComponent(collabRecipients || outreachPartner?.email || '')}&cc=${encodeURIComponent('bidding@gisfy.co.in')}&subject=${encodeURIComponent(outreachProposal.subject || `Exploring JV / Consortium Partnership – ADB Ref #${selectedOpp?.tender_id || selectedOpp?.id}`)}&body=${encodeURIComponent(outreachProposal.loi_content || outreachProposal.proposal_letter || '')}`}
+                    href={`https://outlook.office.com/mail/support@gisfy.co.in/deeplink/compose?to=${encodeURIComponent(collabRecipients || outreachPartner?.email || '')}&subject=${encodeURIComponent(outreachProposal.subject || `Exploring JV / Consortium Partnership – ADB Ref #${selectedOpp?.tender_id || selectedOpp?.id}`)}&body=${encodeURIComponent(outreachProposal.loi_content || outreachProposal.proposal_letter || '')}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{ padding: '0.55rem 0.95rem', background: '#0284c7', color: '#ffffff', borderRadius: '8px', textDecoration: 'none', fontWeight: 700, fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
@@ -3064,7 +3063,7 @@ export default function AdbCmsTab({ API_BASE, showToast, onSelectIndianState }) 
                     📬 Open in Microsoft Outlook (support@gisfy.co.in) ↗
                   </a>
                   <a 
-                    href={`https://mail.google.com/mail/u/bidding.gisfy@gmail.com/?view=cm&fs=1&authuser=bidding.gisfy@gmail.com&to=${encodeURIComponent(collabRecipients || outreachPartner?.email || '')}&cc=${encodeURIComponent('bidding@gisfy.co.in')}&su=${encodeURIComponent(outreachProposal.subject || `Exploring JV / Consortium Partnership – ADB Ref #${selectedOpp?.tender_id || selectedOpp?.id}`)}`}
+                    href={`https://mail.google.com/mail/u/bidding.gisfy@gmail.com/?view=cm&fs=1&authuser=bidding.gisfy@gmail.com&to=${encodeURIComponent(collabRecipients || outreachPartner?.email || '')}&su=${encodeURIComponent(outreachProposal.subject || `Exploring JV / Consortium Partnership – ADB Ref #${selectedOpp?.tender_id || selectedOpp?.id}`)}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{ padding: '0.55rem 0.95rem', background: '#ea4335', color: '#ffffff', borderRadius: '8px', textDecoration: 'none', fontWeight: 700, fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
@@ -3085,7 +3084,9 @@ export default function AdbCmsTab({ API_BASE, showToast, onSelectIndianState }) 
                     </div>
                     <div style={{ fontSize: '0.78rem', color: '#374151', lineHeight: 1.5 }}>
                       From: <b>{collabEmailSentResult.from_address || 'GISFY Support <support@gisfy.co.in>'}</b><br/>
-                      CC: <b>{collabEmailSentResult.cc_recipients?.join(', ') || 'bidding@gisfy.co.in'}</b><br/>
+                      {collabEmailSentResult.cc_recipients && collabEmailSentResult.cc_recipients.length > 0 && (
+                        <>CC: <b>{collabEmailSentResult.cc_recipients.join(', ')}</b><br/></>
+                      )}
                       To: <b>{collabEmailSentResult.recipients?.join(', ')}</b><br/>
                       Subject: <b>{collabEmailSentResult.subject}</b><br/>
                       Delivery Provider: <b>{collabEmailSentResult.delivery_mode || 'Microsoft 365 Direct Outbound'}</b>

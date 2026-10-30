@@ -128,6 +128,84 @@ npm run dev
 
 ---
 
+## 🌐 Production Server Deployment (Ubuntu / AWS / VPS)
+
+To deploy this entire application on a 24/7 Linux server so all email automations, schedulers, and scrapers run continuously without relying on a local machine:
+
+### 1. Prerequisites on Server
+```bash
+sudo apt update && sudo apt install -y python3-pip python3-venv git curl
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+```
+
+### 2. Clone and Setup Backend
+```bash
+git clone https://github.com/AzgharHussain/BID_SEARCH_AUTOMATION.git
+cd BID_SEARCH_AUTOMATION/backend
+
+python3 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+### 3. Setup Frontend
+```bash
+cd ../frontend
+npm install
+npm run build
+```
+
+### 4. Setup 24/7 Backend Background Service (`systemd`)
+Create `/etc/systemd/system/gisfy-proposals.service`:
+```ini
+[Unit]
+Description=GISFY Automated Proposals & Email Scheduler Service
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/path/to/BID_SEARCH_AUTOMATION/backend
+ExecStart=/path/to/BID_SEARCH_AUTOMATION/backend/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+EnvironmentFile=/path/to/BID_SEARCH_AUTOMATION/backend/.env
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start the service:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable gisfy-proposals
+sudo systemctl start gisfy-proposals
+sudo systemctl status gisfy-proposals
+```
+
+---
+
+## ⏰ Dual Daily Email Automation Schedule (Monday to Friday)
+
+The server automatically schedules and executes email outreach during business days without manual intervention:
+
+1. **29 Indian States Public Tender Outreach**:
+   - **Time**: Every Monday to Friday at **09:30 AM IST**.
+   - **Sender**: `bidding.gisfy@gmail.com` (N C Harika | Business Development Executive).
+   - **Quota**: **100 emails/day** across pending state proposals.
+   - **CC**: Direct delivery to verified consortium partners (no mandatory CC).
+
+2. **ADB & Multilateral Projects Outreach**:
+   - **Time**: Every Monday to Friday at **10:30 AM IST**.
+   - **Senders Rotation**: **100 emails per sender** distributed sequentially:
+     - 1️⃣ `support@gisfy.co.in` (100 emails)
+     - 2️⃣ `farhath@gisfy.co.in` (100 emails)
+     - 3️⃣ `firza@gisfy.co.in` (100 emails)
+   - **Inbox & Sent Sync**: Automatically synchronizes sent emails with Microsoft 365 Exchange Sent Items, and client replies route directly to respective team member inboxes.
+
+
 ## ✉️ Email Configuration (SMTP Setup)
 
 By default, the backend operates in **local archive mode**, automatically saving all dispatched HTML emails and attachments in `backend/storage/sent_emails/` without requiring external credentials.

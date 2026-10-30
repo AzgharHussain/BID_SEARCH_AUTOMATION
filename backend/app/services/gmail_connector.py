@@ -108,7 +108,7 @@ class GmailConnector:
             "is_connected": self.auth_type in ["OAuth2", "SMTP"],
             "auth_type": self.auth_type,
             "sender_email": sender_email,
-            "cc_email": "bidding@gisfy.co.in",
+            "cc_email": None,
             "has_oauth": self.auth_type == "OAuth2",
             "has_smtp": self.auth_type == "SMTP",
             "draft_storage_available": True,
@@ -163,7 +163,7 @@ class GmailConnector:
         body_html: str,
         body_text: str,
         sender_email: Optional[str] = None,
-        cc_email: Optional[str] = "bidding@gisfy.co.in"
+        cc_email: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Create an email draft in authorized Gmail account.
@@ -217,7 +217,7 @@ class GmailConnector:
         body_text: str,
         draft_id: Optional[str] = None,
         sender_email: Optional[str] = None,
-        cc_email: Optional[str] = "bidding@gisfy.co.in"
+        cc_email: Optional[str] = None
     ) -> Tuple[bool, Optional[str], Optional[str], Optional[str]]:
         """
         Send an email via authorized Gmail API or secure SMTP.

@@ -25,7 +25,7 @@ DEFAULT_SENDER_EMAIL = "support@gisfy.co.in"
 DEFAULT_PRIMARY_SENDER = "support@gisfy.co.in"
 DEFAULT_SUPPORT_EMAIL = "support@gisfy.co.in"
 DEFAULT_FROM_ADDRESS = "GISFY Support <support@gisfy.co.in>"
-DEFAULT_CC_EMAIL = "bidding@gisfy.co.in"
+DEFAULT_CC_EMAIL = None
 DEFAULT_REPLY_TO = "support@gisfy.co.in"
 ALLOWED_SENDERS = ["support@gisfy.co.in", "bidding.gisfy@gmail.com"]
 ADB_SENDER_EMAIL = "support@gisfy.co.in"
@@ -83,7 +83,11 @@ class LiveEmailProviderService:
         self._device_flow_tenant_id: Optional[str] = None
 
     def _load_config(self):
-        """Load stored provider configuration safely."""
+        """Load stored provider configuration safely and reload .env dynamically."""
+        try:
+            load_dotenv(dotenv_path=BASE_DIR / ".env", override=True)
+        except Exception:
+            pass
         if CONFIG_FILE.exists():
             try:
                 with open(CONFIG_FILE, "r", encoding="utf-8") as f:
@@ -130,7 +134,7 @@ Status Code: {status_code}
 Provider Message ID: {message_id or 'N/A'}
 From: {DEFAULT_SENDER_NAME} <{DEFAULT_SENDER_EMAIL}>
 To: {to_email}
-CC: {DEFAULT_CC_EMAIL}
+CC: {DEFAULT_CC_EMAIL or 'None'}
 Reply-To: {DEFAULT_REPLY_TO}
 Subject: {subject}
 Note: External authenticated relay archive. Preserved permanently in GISFY repository.
@@ -786,7 +790,7 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
             "reply_to": DEFAULT_REPLY_TO,
             "direct_mail": {
                 "is_configured": True,
-                "notes": f"Scope-aware dispatch: ADB emails send from {ADB_SENDER_EMAIL} via Microsoft Outlook; 29 States emails send from {STATE_SENDER_EMAIL} via Gmail. CC: {DEFAULT_CC_EMAIL}. Ready to send immediately."
+                "notes": f"Scope-aware dispatch: ADB emails send from {ADB_SENDER_EMAIL} via Microsoft Outlook; 29 States emails send from {STATE_SENDER_EMAIL} via Gmail. Ready to send immediately."
             },
             "graph_api_base": GRAPH_API_BASE,
             "redirect_uri": DEFAULT_REDIRECT_URI,
@@ -1124,7 +1128,7 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
         body_html: str,
         body_text: str,
         partner_name: Optional[str] = None,
-        cc_email: str = DEFAULT_CC_EMAIL,
+        cc_email: Optional[str] = None,
         from_name: str = DEFAULT_SENDER_NAME,
         from_email: str = DEFAULT_SENDER_EMAIL,
         reply_to: str = DEFAULT_REPLY_TO,
@@ -1136,7 +1140,6 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
         Guarantees:
         - 29 States: Sent via bidding.gisfy@gmail.com -> smtp.gmail.com (TLS 587)
         - ADB Partners: Sent via support@gisfy.co.in / farhath@gisfy.co.in / firza@gisfy.co.in -> Office 365 / Graph API
-        - Mandatory CC: bidding@gisfy.co.in
         - Duplicate prevention
         """
         if lock_key:
@@ -1150,6 +1153,9 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
 
         try:
             self._load_config()
+            if "{{GISFY_LOGO_SRC}}" in body_html:
+                from app.services.collaboration_email_service import get_gisfy_logo_src
+                body_html = body_html.replace("{{GISFY_LOGO_SRC}}", get_gisfy_logo_src())
             sender_clean = (from_email or DEFAULT_SENDER_EMAIL).strip().lower()
 
             # ------------------------------------------------------------------
@@ -1691,7 +1697,7 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
         body_html: str,
         body_text: str,
         partner_name: Optional[str] = None,
-        cc_email: str = DEFAULT_CC_EMAIL,
+        cc_email: Optional[str] = None,
         from_name: str = DEFAULT_SENDER_NAME,
         from_email: str = DEFAULT_SENDER_EMAIL,
         reply_to: str = DEFAULT_REPLY_TO
@@ -1699,22 +1705,28 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
         """
         Direct Mail Client Dispatch:
         Prepares and opens the user's authentic mail client (Outlook / Apple Mail / Webmail)
-        pre-filled with recipient, CC (bidding@gisfy.co.in), subject, and proposal body ending with GISFY Support Team.
-        When user sends, the email delivers directly to the client and bidding team (bidding@gisfy.co.in)
+        pre-filled with recipient, subject, and proposal body ending with GISFY Support Team.
+        When user sends, the email delivers directly to the client
         and automatically appears in their Sent folder.
         """
         import urllib.parse
         clean_to = to_email.strip()
-        clean_cc = (cc_email or DEFAULT_CC_EMAIL).strip()
+        clean_cc = (cc_email or DEFAULT_CC_EMAIL or "").strip()
         full_body = body_text or ""
         quoted_sub = urllib.parse.quote(subject)
         quoted_body = urllib.parse.quote(full_body)
-        quoted_cc = urllib.parse.quote(clean_cc)
-        to_with_cc = f"{clean_to}?cc={clean_cc}"
-        quoted_to_with_cc = urllib.parse.quote(to_with_cc)
-        mailto_url = f"mailto:{clean_to}?cc={quoted_cc}&subject={quoted_sub}&body={quoted_body}"
-        outlook_web_url = f"https://outlook.office.com/mail/{from_email}/deeplink/compose?to={quoted_to_with_cc}&cc={quoted_cc}&subject={quoted_sub}&body={quoted_body}"
-        gmail_web_url = f"https://mail.google.com/mail/u/{from_email}/?view=cm&fs=1&authuser={from_email}&to={clean_to}&cc={quoted_cc}&su={quoted_sub}&body={quoted_body}"
+
+        if clean_cc:
+            quoted_cc = urllib.parse.quote(clean_cc)
+            to_with_cc = f"{clean_to}?cc={clean_cc}"
+            quoted_to_with_cc = urllib.parse.quote(to_with_cc)
+            mailto_url = f"mailto:{clean_to}?cc={quoted_cc}&subject={quoted_sub}&body={quoted_body}"
+            outlook_web_url = f"https://outlook.office.com/mail/{from_email}/deeplink/compose?to={quoted_to_with_cc}&cc={quoted_cc}&subject={quoted_sub}&body={quoted_body}"
+            gmail_web_url = f"https://mail.google.com/mail/u/{from_email}/?view=cm&fs=1&authuser={from_email}&to={clean_to}&cc={quoted_cc}&su={quoted_sub}&body={quoted_body}"
+        else:
+            mailto_url = f"mailto:{clean_to}?subject={quoted_sub}&body={quoted_body}"
+            outlook_web_url = f"https://outlook.office.com/mail/{from_email}/deeplink/compose?to={clean_to}&subject={quoted_sub}&body={quoted_body}"
+            gmail_web_url = f"https://mail.google.com/mail/u/{from_email}/?view=cm&fs=1&authuser={from_email}&to={clean_to}&su={quoted_sub}&body={quoted_body}"
 
         # Archive sent copy locally
         try:
@@ -1724,12 +1736,14 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
             with open(out_file, "w", encoding="utf-8") as f:
                 f.write(f"<!-- From: {from_name} <{from_email}> -->\n")
                 f.write(f"<!-- To: {clean_to} -->\n")
-                f.write(f"<!-- CC: {clean_cc} -->\n")
+                if clean_cc:
+                    f.write(f"<!-- CC: {clean_cc} -->\n")
                 f.write(f"<!-- Subject: {subject} -->\n")
                 f.write(body_html)
         except Exception:
             pass
 
+        prov_msg = f"Email proposal prepared from {from_email}" + (f" (CC: {clean_cc})" if clean_cc else "") + ". Dispatched and archived."
         return {
             "success": True,
             "status": "Found in Sent Items",
@@ -1737,12 +1751,12 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
             "provider_status_code": 200,
             "sent_folder_verified": True,
             "delivery_verified": True,
-            "provider_message": f"Email proposal prepared from {from_email} (CC: {clean_cc}). Dispatched and archived.",
+            "provider_message": prov_msg,
             "mailto_url": mailto_url,
             "outlook_web_url": outlook_web_url,
             "gmail_web_url": gmail_web_url,
             "recipient": clean_to,
-            "cc": clean_cc,
+            "cc": clean_cc or None,
             "from": f"{from_name} <{from_email}>",
             "sender_email": from_email,
             "reply_to": reply_to
@@ -1765,7 +1779,6 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
         Guarantees:
         - From: GISFY Support <support@gisfy.co.in>
         - To: partner_email
-        - CC: bidding@gisfy.co.in
         - Reply-To: support@gisfy.co.in
         - In-app sent archiving (external SMTP does not appear in Outlook Sent Items)
         """
@@ -1921,7 +1934,6 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
         Guarantees:
         - From: GISFY Support <support@gisfy.co.in>
         - To: partner_email
-        - CC: bidding@gisfy.co.in
         - Reply-To: support@gisfy.co.in
         """
         api_key = self._config.get("sendgrid_api_key") or os.getenv("SENDGRID_API_KEY")
@@ -2189,7 +2201,7 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
         # Build clean test proposal email
         from app.services.collaboration_email_service import build_collaboration_email_html, build_collaboration_email_text
         subject = f"Exploring JV / Consortium Partnership – Test Verification Ref #TEST-1"
-        test_overview = "End-to-end verification of Microsoft 365 Exchange Online outbound email delivery, mandatory CC synchronization to bidding@gisfy.co.in, and Outlook Sent Items tracking."
+        test_overview = "End-to-end verification of Microsoft 365 Exchange Online outbound email delivery and Outlook Sent Items tracking."
         body_text = build_collaboration_email_text(
             project_name="GISFY Procurement Intelligence System Verification",
             project_overview=test_overview
@@ -2214,7 +2226,7 @@ Note: External authenticated relay archive. Preserved permanently in GISFY repos
         # Store record of test result
         self._config["last_test_result"] = {
             "recipient": approved_recipient,
-            "cc": DEFAULT_CC_EMAIL,
+            "cc": DEFAULT_CC_EMAIL or "",
             "from": f"{DEFAULT_SENDER_NAME} <{DEFAULT_SENDER_EMAIL}>",
             "success": dispatch_result.get("success", False),
             "status": dispatch_result.get("status"),

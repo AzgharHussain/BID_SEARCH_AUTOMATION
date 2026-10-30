@@ -14,6 +14,220 @@ from app.services.gmail_connector import gmail_connector
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 
+# Comprehensive patterns for tailoring technical scope dynamically to projects/tenders
+# Strict format:
+# Sentence 1: The assignment encompasses {act1}, {act2}, and {act3}.
+# Sentence 2: Key technical requirements involve {req1}, {req2}, quality assurance, and {req3}.
+PROJECT_TECHNICAL_SCOPE_PATTERNS = [
+    # 1. CCTV, Smart Surveillance & Security Control Rooms
+    (
+        'surveillance',
+        re.compile(r'\b(cctv|surveillance|cameras?|security systems?|control rooms?|command cent(?:er|re)|vms|video management|access control)\b', re.I),
+        (
+            'The assignment encompasses comprehensive field deployment of high-definition CCTV surveillance infrastructure, network video recording integration with multi-point sensor arrays, and the operationalization of a centralized digital security control room.',
+            'Key technical requirements involve High-Definition Video Surveillance Systems, Network Video Recording & allied IT Infrastructure, quality assurance, and integration with centralized real-time security monitoring systems.',
+            'smart surveillance and security project',
+            'Smart Surveillance & Security Project'
+        )
+    ),
+    # 2. Roads, Highways, Corridors & Pavements
+    (
+        'transport',
+        re.compile(r'\b(highways?|roads?|corridors?|pavements?|bridges?|flyovers?|expressways?|culverts?|carriageways?|traffic engineering|traffic management|toll plaza|ser-\d+)\b', re.I),
+        (
+            'The assignment encompasses comprehensive road asset inventory acquisition, high-precision corridor condition surveys, and the deployment of an enterprise digital transportation infrastructure database.',
+            'Key technical requirements involve Road Asset Management Systems, Pavement Condition & Corridor Spatial Engineering, quality assurance, and integration with public transportation monitoring systems.',
+            'transport and infrastructure project',
+            'Transport & Infrastructure Project'
+        )
+    ),
+    # 3. Railways & Mass Rapid Transit
+    (
+        'railway',
+        re.compile(r'\b(railways?|rapid transit|metro rail|rail tracks?|rolling stocks?|freight corridor)\b', re.I),
+        (
+            'The assignment encompasses railway alignment data acquisition, high-precision permanent way and asset surveys, and the deployment of a centralized digital railway infrastructure database.',
+            'Key technical requirements involve Transit Corridor Spatial Analytics, Railway Track & Asset Engineering, quality assurance, and integration with operational train monitoring systems.',
+            'railway and mass transit project',
+            'Railway & Mass Transit Project'
+        )
+    ),
+    # 4. Drone, LiDAR, Cadastral & Core WebGIS
+    (
+        'geospatial',
+        re.compile(r'\b(drones?|uavs?|lidar|dgps|cadastral|photogrammetry|gis mapping|geospatial|remote sensing|topographic surveys?|cartograph\w*|webgis)\b', re.I),
+        (
+            'The assignment encompasses comprehensive field data acquisition, high-precision geospatial surveys, and the deployment of an enterprise WebGIS digital database.',
+            'Key technical requirements involve Enterprise GIS Solutions, Digital Surveying & Geodatabase Engineering, quality assurance, and integration with public infrastructure monitoring systems.',
+            'geospatial and digital survey project',
+            'Geospatial & Digital Survey Project'
+        )
+    ),
+    # 5. Electro-Mechanical, Facility Maintenance & ARMO/RMO
+    (
+        'facility',
+        re.compile(r'\b(armo|rmo|e\s*&\s*m|e and m|electro-mechanical|firefighting|cooling towers?|dg sets?|hvac|air conditioning|plumbing|sanitary works?|repair of existing|maintenance of existing)\b', re.I),
+        (
+            'The assignment encompasses electro-mechanical facility assessment, infrastructure asset inventorying, and the deployment of an enterprise facility operations digital database.',
+            'Key technical requirements involve Electro-Mechanical Systems Engineering, Facility Maintenance & Asset Registry Management, quality assurance, and integration with facility operations monitoring systems.',
+            'facility operations and infrastructure project',
+            'Facility Operations & Infrastructure Project'
+        )
+    ),
+    # 6. Water Resources, Irrigation, Dams & Hydrology
+    (
+        'water',
+        re.compile(r'\b(water resources?|iwrm|irrigat\w*|hydrolog\w*|drainage|flood\w*|\bdams?\b|canals?|river basins?|water supply|watersheds?|aquifers?|reservoirs?|wastewater|sewerage|water balance|water security|hydrogeolog\w*)\b', re.I),
+        (
+            'The assignment encompasses comprehensive hydrological data acquisition, water distribution asset mapping and catchment surveys, and the deployment of an enterprise water resource management digital database.',
+            'Key technical requirements involve Hydrological Modeling & Water Network Engineering, Spatial Asset Inventory & Geodatabase Solutions, quality assurance, and integration with public water infrastructure monitoring systems.',
+            'water resources project',
+            'Water Resources Project'
+        )
+    ),
+    # 7. Energy, Power, Solar & SCADA
+    (
+        'energy',
+        re.compile(r'\b(solar|power sector|power grid|power plant|photovoltaic|substations?|\bgrids?\b|electricity|decarbonization|transmissions?|scada|transformers?|electrical works?|electrification)\b', re.I),
+        (
+            'The assignment encompasses power network asset characterization, renewable energy site mapping and electrical equipment evaluation, and the deployment of an enterprise digital power distribution database.',
+            'Key technical requirements involve Power Transmission & Distribution Asset Engineering, Solar PV & SCADA System Integration, quality assurance, and integration with public utility monitoring systems.',
+            'energy and power sector project',
+            'Energy & Power Sector Project'
+        )
+    ),
+    # 8. Environment, Climate Resilience & Bio-Medical Waste
+    (
+        'environment',
+        re.compile(r'\b(environments?|forest\w*|climates?|waste management|bio-medical|pollution|ecolog\w*|biodiversity|rehabilitation|conservation|subsidence|effluents?|sanitation|garbage)\b', re.I),
+        (
+            'The assignment encompasses comprehensive baseline environmental data collection, ecological habitat and emissions mapping, and the deployment of an enterprise digital environmental database.',
+            'Key technical requirements involve Environmental Impact Assessment Solutions, Ecological Monitoring & Geodatabase Engineering, quality assurance, and integration with statutory environmental compliance systems.',
+            'environment and climate resilience project',
+            'Environment & Climate Resilience Project'
+        )
+    ),
+    # 9. Agriculture & Rural Development
+    (
+        'agriculture',
+        re.compile(r'\b(agricultur\w*|farmlands?|\bcrops?\b|agroforestry|rural livelihoods?|smallholders?|farming|horticultur\w*|livestock|veterinary|\bsoils?\b)\b', re.I),
+        (
+            'The assignment encompasses agricultural land parcel data acquisition, high-resolution crop health and vegetation surveys, and the deployment of an enterprise digital agricultural database.',
+            'Key technical requirements involve Agri-Spatial Analytics & Remote Sensing, Land Capability & Crop Health Assessment, quality assurance, and integration with agricultural decision support systems.',
+            'agriculture and rural development project',
+            'Agriculture & Rural Development Project'
+        )
+    ),
+    # 10. Healthcare & Biomedical Systems
+    (
+        'healthcare',
+        re.compile(r'\b(healthcare|hospitals?|medical|clinical|epidemiolog\w*|patients?|telemedicine|dispensar\w*)\b', re.I),
+        (
+            'The assignment encompasses comprehensive healthcare facility inventorying, spatial health infrastructure assessments, and the deployment of a centralized healthcare digital database.',
+            'Key technical requirements involve Public Health Analytics Solutions, Clinical Asset & Health Informatics Engineering, quality assurance, and integration with public healthcare monitoring systems.',
+            'healthcare systems project',
+            'Healthcare Systems Project'
+        )
+    ),
+    # 11. Software, IT Solutions, Cloud & MIS
+    (
+        'software',
+        re.compile(r'\b(softwares?|information systems?|\bmis\b|web portals?|web applications?|cloud computing|data cent(?:er|re)|application development|databases?|\bict\b|digitization|digital twins?)\b', re.I),
+        (
+            'The assignment encompasses enterprise systems requirement analysis, secure cloud-native application engineering, and the deployment of a scalable enterprise digital database.',
+            'Key technical requirements involve Enterprise Software Architecture Solutions, Relational Database Engineering & Cloud Integration, quality assurance, and integration with automated operational monitoring systems.',
+            'software and IT solutions project',
+            'Software & IT Solutions Project'
+        )
+    ),
+    # 12. Urban Infrastructure, Municipal Planning & Construction
+    (
+        'urban',
+        re.compile(r'\b(urban planning|municip\w*|town planning|\bcities\b|\bcity\b|housing|smart city|civic infrastructure|slums?|\bwards?\b|property tax|construction|civil works?|buildings?|structures?|toilet blocks?)\b', re.I),
+        (
+            'The assignment encompasses comprehensive municipal asset mapping, high-precision urban infrastructure surveys, and the deployment of an enterprise civic digital database.',
+            'Key technical requirements involve Urban Spatial Planning Solutions, Municipal Cadastre & Infrastructure Engineering, quality assurance, and integration with municipal governance monitoring systems.',
+            'urban infrastructure project',
+            'Urban Infrastructure Project'
+        )
+    ),
+    # 13. Telecommunications & Fiber Networks
+    (
+        'telecom',
+        re.compile(r'\b(telecom\w*|optical fibers?|\bofc\b|fiber optic|broadband|wireless networks?|telephony)\b', re.I),
+        (
+            'The assignment encompasses telecommunication corridor data acquisition, optical fiber route surveys, and the deployment of an enterprise network GIS database.',
+            'Key technical requirements involve Telecommunication Network Engineering, Fiber Asset Inventory & Spatial Management, quality assurance, and integration with telecommunication operations monitoring systems.',
+            'telecommunication infrastructure project',
+            'Telecommunication Infrastructure Project'
+        )
+    ),
+    # 14. Mining & Geological Resources
+    (
+        'mining',
+        re.compile(r'\b(mining|minerals?|geology|geological|quarr\w*)\b', re.I),
+        (
+            'The assignment encompasses mineral terrain data acquisition, high-precision geological mapping surveys, and the deployment of an enterprise geological spatial database.',
+            'Key technical requirements involve Geological Spatial Modeling Solutions, Mineral Asset & Terrain Engineering, quality assurance, and integration with statutory mining compliance monitoring systems.',
+            'mining and geological resources project',
+            'Mining & Geological Resources Project'
+        )
+    ),
+    # 15. Ports, Maritime & Coastal
+    (
+        'maritime',
+        re.compile(r'\b(ports?|maritime|harbors?|harbours?|jetties|jetty|inland waterways?|bathymetr\w*)\b', re.I),
+        (
+            'The assignment encompasses bathymetric field data acquisition, coastal and maritime corridor surveys, and the deployment of an enterprise maritime spatial database.',
+            'Key technical requirements involve Hydrographic & Coastal Asset Engineering, Marine Geodatabase Solutions, quality assurance, and integration with vessel traffic and port monitoring systems.',
+            'maritime and port infrastructure project',
+            'Maritime & Port Infrastructure Project'
+        )
+    ),
+    # 16. Financial, Audit & Governance Advisory
+    (
+        'governance',
+        re.compile(r'\b(financ\w*|audits?|governance|\btax\b|taxes|accounting|advisory services?|macro economic|trade finance)\b', re.I),
+        (
+            'The assignment encompasses institutional data collection, systematic financial and operational process reviews, and the deployment of an enterprise governance tracking database.',
+            'Key technical requirements involve Financial Governance Advisory Solutions, Operational Process & Systems Engineering, quality assurance, and integration with statutory governance monitoring systems.',
+            'financial and governance advisory project',
+            'Financial & Governance Advisory Project'
+        )
+    ),
+]
+
+
+def generate_project_technical_scope(
+    title: Optional[str] = "",
+    description: Optional[str] = "",
+    project_sector: Optional[str] = "",
+    department: Optional[str] = "",
+    keywords_str: Optional[str] = "",
+    scope_of_work: Optional[str] = ""
+) -> Tuple[str, str, str]:
+    """
+    Dynamically generates the 2-sentence project technical scope according to the project/tender,
+    without including any client information, tender IDs, budgets, deadlines, or locations.
+
+    Strict format:
+    Sentence 1: The assignment encompasses {act1}, {act2}, and {act3}.
+    Sentence 2: Key technical requirements involve {req1}, {req2}, quality assurance, and {req3}.
+
+    Returns:
+    (technical_scope_paragraph, sector_phrase, sector_title)
+    """
+    text = f"{title or ''} {project_sector or ''} {scope_of_work or ''} {description or ''} {keywords_str or ''}".lower()
+    for domain_id, regex, (s1, s2, phrase, sec_title) in PROJECT_TECHNICAL_SCOPE_PATTERNS:
+        if regex.search(text):
+            return f"{s1} {s2}", phrase, sec_title
+
+    # Default fallback adhering strictly to the exact same format
+    s1 = "The assignment encompasses comprehensive field data acquisition, digital technical surveys, and the deployment of an enterprise digital spatial database."
+    s2 = "Key technical requirements involve Enterprise Technology Solutions, Digital Engineering & Geodatabase Architecture, quality assurance, and integration with public infrastructure monitoring systems."
+    return f"{s1} {s2}", "technology and infrastructure project", "Technology & Infrastructure Project"
+
+
 def detect_tender_sector(
     title: Optional[str] = "",
     project_sector: Optional[str] = "",
@@ -24,49 +238,13 @@ def detect_tender_sector(
     Intelligently detect the high-level sector for a tender (e.g. Water Resources, Software, Agriculture).
     Returns (subject_sector_title, body_sector_phrase).
     """
-    text = f"{title or ''} {project_sector or ''} {department or ''} {keywords_str or ''}".lower()
-
-    # 1. Water Resources
-    if any(w in text for w in ['water resource', 'iwrm', 'irrigation', 'hydrolog', 'drainage', 'flood', 'dam ', 'river basin', 'water supply', 'watershed', 'canal', 'wastewater', 'aquifer', 'reservoir', 'water balance', 'water security', 'hydro']):
-        return 'Water Resources Project', 'water resources project'
-
-    # 2. Agriculture & Rural Development
-    if any(w in text for w in ['agricultur', 'farmland', 'crop', 'coffee', 'cashew', 'agroforestry', 'rural livelihood', 'smallholder', 'farming', 'horticultur', 'livestock', 'veterinary']):
-        return 'Agriculture & Rural Development Project', 'agriculture and rural development project'
-
-    # 3. Transport & Infrastructure
-    if any(w in text for w in ['railway', 'transport', 'rapid transit', 'highway', 'road', 'corridor', 'metro', 'freight', 'traffic', 'e-mobility', 'vehicle', 'bridge']):
-        return 'Transport & Infrastructure Project', 'transport and infrastructure project'
-
-    # 4. Energy & Power
-    if any(w in text for w in ['power', 'energy', 'solar', 'grid', 'electricity', 'decarbonization', 'substation', 'transmission', 'wind energy', 'photovoltaic']):
-        return 'Energy & Power Sector Project', 'energy and power sector project'
-
-    # 5. Healthcare Systems
-    if any(w in text for w in ['health', 'primary health', 'medical', 'hospital', 'disease', 'epidemiology', 'biomedical', 'clinical']):
-        return 'Healthcare Systems Project', 'healthcare systems project'
-
-    # 6. Software & IT Solutions
-    if any(w in text for w in ['software', 'information system', 'mis', 'portal', 'website', 'it infrastructure', 'cloud', 'data center', 'application development', 'database', 'ict', 'scada', 'telecom', 'computer', 'digitization', 'digital twin']):
-        return 'Software & IT Solutions Project', 'software and IT solutions project'
-
-    # 7. Smart Surveillance & Security
-    if any(w in text for w in ['cctv', 'surveillance', 'camera', 'security system', 'monitoring system', 'control room']):
-        return 'Smart Surveillance & Security Project', 'smart surveillance and security project'
-
-    # 8. Environment & Climate Resilience
-    if any(w in text for w in ['environment', 'climate', 'forest', 'biodiversity', 'coastal', 'ecological', 'pollution', 'waste', 'bio-medical waste', 'rehabilitation', 'conservation', 'subsidence']):
-        return 'Environment & Climate Resilience Project', 'environment and climate resilience project'
-
-    # 9. Urban Infrastructure
-    if any(w in text for w in ['urban', 'housing', 'municipal', 'town planning', 'city', 'civil works', 'building', 'drain near', 'construction']):
-        return 'Urban Infrastructure Project', 'urban infrastructure project'
-
-    # 10. Financial & Governance
-    if any(w in text for w in ['finance', 'financial', 'audit', 'governance', 'tax', 'accounting', 'advisory', 'capital accelerator', 'macro economic', 'trade']):
-        return 'Financial & Governance Advisory Project', 'financial and governance advisory project'
-
-    return 'Technology & Infrastructure Project', 'technology and infrastructure project'
+    _, phrase, title_sec = generate_project_technical_scope(
+        title=title,
+        project_sector=project_sector,
+        department=department,
+        keywords_str=keywords_str
+    )
+    return title_sec, phrase
 
 
 def format_clean_subject(
@@ -207,6 +385,28 @@ def extract_project_scope_lines(project_overview: Optional[str] = None, sector_p
     sec = sector_phrase or "technology and infrastructure project"
     return f"The proposed scope of work encompasses comprehensive field data acquisition, high-precision geospatial surveys, enterprise digital database implementation, and specialized technical execution for this {sec}."
 
+def clean_project_title(raw_title: Optional[str]) -> str:
+    """Clean and standardize tender/project title for email body and subject line."""
+    if not raw_title:
+        return "Technology & Geospatial Infrastructure Project"
+    t = raw_title.strip()
+    if t.startswith("[") and t.endswith("]"):
+        t = t[1:-1].strip()
+    # Remove leading procurement labels e.g. LOAN-4553 CAM:, TA-9626 IND:, IFB No., RFP, NIT
+    t = re.sub(r'^(LOAN|GRANT|TA|IFB|RFP|NIT|Tender\s*No\.?)\s*[-#A-Za-z0-9/]+(\s+[A-Za-z]{3})?:\s*', '', t, flags=re.I)
+    t = re.sub(r'^Estimate\s+No\.?\s*[-#A-Za-z0-9/\s]+:\s*', '', t, flags=re.I)
+    # If there's a Sub Head / SH, take the primary work description
+    sub_head_match = re.search(r'(?:Sub\s*Head|SH[:\s-]+)\s*(.+)', t, re.I)
+    if sub_head_match:
+        t = sub_head_match.group(1).strip()
+    # Remove embedded tender ID or notice reference tags
+    t = re.sub(r'\s*\((?:Tender\s*ID|Ref(?:erence)?\s*No\.?|Package\s*No\.?|Notice\s*No\.?)\s*:[^)]*\)', '', t, flags=re.I)
+    # Remove trailing package/consultancy codes e.g. (E-055197-001)
+    t = re.sub(r'\s*\([A-Za-z0-9_-]+\)\s*$', '', t)
+    t = t.strip("'\" \t\r\n")
+    return t or "Technology & Geospatial Infrastructure Project"
+
+
 def build_collaboration_email_text(
     project_name: Optional[str] = None,
     project_overview: Optional[str] = None,
@@ -214,14 +414,22 @@ def build_collaboration_email_text(
     is_adb: bool = False,
     sender_name: Optional[str] = None,
     sender_email: Optional[str] = None,
-    sector_phrase: Optional[str] = None
+    sector_phrase: Optional[str] = None,
+    technical_scope_paragraph: Optional[str] = None
 ) -> str:
-    """Build the clean plain text initial collaboration outreach email focusing on sector and scope of work."""
-    if not sector_phrase:
-        _, sector_phrase = detect_tender_sector(title=project_name)
+    """Build the clean plain text initial collaboration outreach email with dynamic technical scope and project title."""
     s_info = resolve_sender_details(is_adb=is_adb, sender_email=sender_email, sender_name=sender_name)
     resolved_name = s_info["name"]
-    scope_text = extract_project_scope_lines(project_overview=project_overview, sector_phrase=sector_phrase)
+    clean_title = clean_project_title(project_name)
+
+    if not technical_scope_paragraph:
+        technical_scope_paragraph, derived_phrase, _ = generate_project_technical_scope(
+            title=project_name,
+            description=project_overview,
+            project_sector=sector_phrase
+        )
+        if not sector_phrase:
+            sector_phrase = derived_phrase
 
     return f"""Dear Team,
 
@@ -229,23 +437,19 @@ Greetings from GISFY Private Limited, India.
 
 We are an ISO-certified technology company specialising in Geographic Information Systems (GIS), WebGIS, Artificial Intelligence and Machine Learning (AI/ML), data analytics, Management Information Systems (MIS), cloud solutions, and digital transformation.
 
-We are currently exploring a potential Joint Venture (JV) / Consortium partnership with your organisation to collaborate and work together for an upcoming {sector_phrase}.
+We are currently exploring a potential Joint Venture (JV) / Consortium partnership with your organisation to collaborate and work together for the following project:
 
-{scope_text}
+{technical_scope_paragraph}
 
 Considering your organisation's expertise and experience, we believe there are strong synergies for mutual collaboration in the joint execution and implementation of this project.
 
 If your organisation is interested in exploring this partnership opportunity, we kindly request you to share the following preliminary documents for our mutual evaluation:
 
-• Company Profile – Highlighting technical capabilities, core competencies, and areas of expertise.
-
-• Company Registration Certificate – Valid documentation confirming legal registration.
-
-• Tax Registration Certificate – Applicable tax registration documents.
-
-• CVs of Key Experts – Profiles of qualified professionals and technical specialists.
-
-• Relevant Project Experience – Overview of similar completed or ongoing projects.
+Company Profile – Highlighting technical capabilities, core competencies, and areas of expertise.
+Company Registration Certificate – Valid documentation confirming legal registration.
+Tax Registration Certificate – Applicable tax registration documents.
+CVs of Key Experts – Profiles of qualified professionals and technical specialists.
+Relevant Project Experience – Overview of similar completed or ongoing projects.
 
 Upon receiving and reviewing these details, we would be pleased to schedule an introductory discussion and share a draft Joint Venture / Consortium Agreement for your review and mutual consideration.
 
@@ -253,11 +457,10 @@ We look forward to your positive response and the opportunity to establish a mut
 
 Thanks & Regards,
 {resolved_name}
-GISFY Private Limited
-Ground Floor, DSL Abacus IT Park,
+GISFY Private Limited, Ground Floor, DSL Abacus IT Park,
 Uppal, Hyderabad, Telangana – 500039, India
 Mobile: +91 90631 20678
-Website: www.gisfy.co.in"""
+Website : www.gisfy.co.in"""
 
 def build_collaboration_email_html(
     project_name: Optional[str] = None,
@@ -267,63 +470,63 @@ def build_collaboration_email_html(
     sender_name: Optional[str] = None,
     sender_email: Optional[str] = None,
     subject_line: Optional[str] = None,
-    sector_phrase: Optional[str] = None
+    sector_phrase: Optional[str] = None,
+    technical_scope_paragraph: Optional[str] = None,
+    logo_src: Optional[str] = None
 ) -> str:
-    """Build clean executive HTML email with sector focus, project scope, and authentic PNG GISFY logo."""
-    if not sector_phrase:
-        _, sector_phrase = detect_tender_sector(title=project_name)
-    logo_src = "{{GISFY_LOGO_SRC}}"
+    """Build clean executive HTML email strictly containing only letter, project title, and authentic PNG GISFY logo."""
+    if not logo_src:
+        logo_src = "{{GISFY_LOGO_SRC}}"
     s_info = resolve_sender_details(is_adb=is_adb, sender_email=sender_email, sender_name=sender_name)
     resolved_name = s_info["name"]
-    scope_text = extract_project_scope_lines(project_overview=project_overview, sector_phrase=sector_phrase)
+    clean_title = clean_project_title(project_name)
+
+    if not technical_scope_paragraph:
+        technical_scope_paragraph, derived_phrase, _ = generate_project_technical_scope(
+            title=project_name,
+            description=project_overview,
+            project_sector=sector_phrase
+        )
+        if not sector_phrase:
+            sector_phrase = derived_phrase
 
     return f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<style>
-  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #1e293b; background-color: #ffffff; margin: 0; padding: 24px; }}
-  .content {{ max-width: 680px; margin: 0 auto; font-size: 14.5px; color: #1e293b; }}
-  p {{ margin: 0 0 16px 0; }}
-  .scope-box {{ background-color: #f8fafc; border-left: 3px solid #0284c7; padding: 12px 16px; margin: 16px 0; border-radius: 4px; font-size: 14px; color: #334155; line-height: 1.55; }}
-  ul.doc-list {{ margin: 16px 0 18px 24px; padding-left: 0; list-style-type: disc; }}
-  li.doc-item {{ margin-bottom: 8px; line-height: 1.5; color: #1e293b; }}
-  .sig-block {{ margin-top: 24px; padding-top: 18px; border-top: 1px solid #e2e8f0; font-size: 13.5px; color: #374151; line-height: 1.6; }}
-  .sig-regards {{ font-size: 14px; color: #1e293b; margin-bottom: 6px; font-weight: 500; }}
-  .sig-name {{ font-weight: 700; font-size: 15px; color: #0f172a; margin-bottom: 4px; }}
-  .sig-line {{ color: #475569; }}
-  .sig-logo {{ margin-top: 14px; }}
-</style>
+<title>Exploring JV / Consortium Partnership</title>
 </head>
-<body>
-<div class="content">
-  <p>Dear Team,</p>
-  <p>Greetings from GISFY Private Limited, India.</p>
-  <p>We are an ISO-certified technology company specialising in Geographic Information Systems (GIS), WebGIS, Artificial Intelligence and Machine Learning (AI/ML), data analytics, Management Information Systems (MIS), cloud solutions, and digital transformation.</p>
-  <p>We are currently exploring a potential Joint Venture (JV) / Consortium partnership with your organisation to collaborate and work together for an upcoming <b>{sector_phrase}</b>.</p>
-  <div class="scope-box">{scope_text}</div>
-  <p>Considering your organisation's expertise and experience, we believe there are strong synergies for mutual collaboration in the joint execution and implementation of this project.</p>
-  <p>If your organisation is interested in exploring this partnership opportunity, we kindly request you to share the following preliminary documents for our mutual evaluation:</p>
-  <ul class="doc-list" style="margin: 14px 0 18px 22px; padding-left: 0; list-style-type: disc;">
-    <li class="doc-item" style="margin-bottom: 8px; line-height: 1.5;"><b>Company Profile</b> – Highlighting technical capabilities, core competencies, and areas of expertise.</li>
-    <li class="doc-item" style="margin-bottom: 8px; line-height: 1.5;"><b>Company Registration Certificate</b> – Valid documentation confirming legal registration.</li>
-    <li class="doc-item" style="margin-bottom: 8px; line-height: 1.5;"><b>Tax Registration Certificate</b> – Applicable tax registration documents.</li>
-    <li class="doc-item" style="margin-bottom: 8px; line-height: 1.5;"><b>CVs of Key Experts</b> – Profiles of qualified professionals and technical specialists.</li>
-    <li class="doc-item" style="margin-bottom: 8px; line-height: 1.5;"><b>Relevant Project Experience</b> – Overview of similar completed or ongoing projects.</li>
-  </ul>
-  <p>Upon receiving and reviewing these details, we would be pleased to schedule an introductory discussion and share a draft Joint Venture / Consortium Agreement for your review and mutual consideration.</p>
-  <p>We look forward to your positive response and the opportunity to establish a mutually beneficial partnership.</p>
+<body style="margin: 0; padding: 16px 20px 36px 20px; background-color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.6; color: #1e293b; text-align: left;">
+<div style="margin: 0; padding: 0; max-width: 720px; text-align: left; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.6; color: #1e293b;">
+  <p style="margin: 0 0 16px 0; padding: 0; line-height: 1.6; color: #1e293b; text-align: left;">Dear Team,</p>
+  <p style="margin: 0 0 16px 0; padding: 0; line-height: 1.6; color: #1e293b; text-align: left;">Greetings from GISFY Private Limited, India.</p>
+  <p style="margin: 0 0 16px 0; padding: 0; line-height: 1.6; color: #1e293b; text-align: left;">We are an ISO-certified technology company specialising in Geographic Information Systems (GIS), WebGIS, Artificial Intelligence and Machine Learning (AI/ML), data analytics, Management Information Systems (MIS), cloud solutions, and digital transformation.</p>
+  <p style="margin: 0 0 16px 0; padding: 0; line-height: 1.6; color: #1e293b; text-align: left;">We are currently exploring a potential Joint Venture (JV) / Consortium partnership with your organisation to collaborate and work together for the following project:</p>
+  <p style="margin: 0 0 16px 0; padding: 0; line-height: 1.6; color: #1e293b; text-align: left;">{technical_scope_paragraph}</p>
+  <p style="margin: 0 0 16px 0; padding: 0; line-height: 1.6; color: #1e293b; text-align: left;">Considering your organisation's expertise and experience, we believe there are strong synergies for mutual collaboration in the joint execution and implementation of this project.</p>
+  <p style="margin: 0 0 14px 0; padding: 0; line-height: 1.6; color: #1e293b; text-align: left;">If your organisation is interested in exploring this partnership opportunity, we kindly request you to share the following preliminary documents for our mutual evaluation:</p>
+  <div style="margin: 0 0 16px 0; padding: 0; text-align: left;">
+    <p style="margin: 0 0 6px 0; padding: 0; line-height: 1.5; color: #1e293b; text-align: left;">Company Profile – Highlighting technical capabilities, core competencies, and areas of expertise.</p>
+    <p style="margin: 0 0 6px 0; padding: 0; line-height: 1.5; color: #1e293b; text-align: left;">Company Registration Certificate – Valid documentation confirming legal registration.</p>
+    <p style="margin: 0 0 6px 0; padding: 0; line-height: 1.5; color: #1e293b; text-align: left;">Tax Registration Certificate – Applicable tax registration documents.</p>
+    <p style="margin: 0 0 6px 0; padding: 0; line-height: 1.5; color: #1e293b; text-align: left;">CVs of Key Experts – Profiles of qualified professionals and technical specialists.</p>
+    <p style="margin: 0 0 6px 0; padding: 0; line-height: 1.5; color: #1e293b; text-align: left;">Relevant Project Experience – Overview of similar completed or ongoing projects.</p>
+  </div>
+  <p style="margin: 0 0 16px 0; padding: 0; line-height: 1.6; color: #1e293b; text-align: left;">Upon receiving and reviewing these details, we would be pleased to schedule an introductory discussion and share a draft Joint Venture / Consortium Agreement for your review and mutual consideration.</p>
+  <p style="margin: 0 0 24px 0; padding: 0; line-height: 1.6; color: #1e293b; text-align: left;">We look forward to your positive response and the opportunity to establish a mutually beneficial partnership.</p>
   
-  <div class="sig-block">
-    <div class="sig-regards">Thanks &amp; Regards,</div>
-    <div class="sig-name">{resolved_name}</div>
-    <div class="sig-line">GISFY Private Limited, Ground Floor, DSL Abacus IT Park,</div>
-    <div class="sig-line">Uppal, Hyderabad, Telangana – 500039, India</div>
-    <div class="sig-line"><b>Mobile:</b> <a href="tel:+919063120678" style="color: #4f46e5; text-decoration: none;">+91 90631 20678</a></div>
-    <div class="sig-line"><b>Website :</b> <a href="https://www.gisfy.co.in" target="_blank" style="color: #4f46e5; text-decoration: none;">www.gisfy.co.in</a></div>
-    <div class="sig-logo">
-      <img src="{logo_src}" alt="GISFY Logo" style="height: 52px; max-width: 220px; object-fit: contain; display: block;" />
+  <div style="margin-top: 24px; padding: 0; text-align: left; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+    <p style="margin: 0 0 12px 0; padding: 0; font-size: 14.5px; font-weight: 500; color: #1e293b; line-height: 1.4; text-align: left;">Thanks &amp; Regards,</p>
+    <p style="margin: 0 0 4px 0; padding: 0; font-size: 15px; font-weight: 700; color: #0f172a; line-height: 1.4; text-align: left;">{resolved_name}</p>
+    <p style="margin: 0 0 14px 0; padding: 0; font-size: 13.5px; color: #475569; line-height: 1.45; text-align: left;">
+      GISFY Private Limited, Ground Floor, DSL Abacus IT Park,<br>
+      Uppal, Hyderabad, Telangana – 500039, India<br>
+      Mobile: +91 90631 20678<br>
+      Website : <a href="https://www.gisfy.co.in" target="_blank" style="color: #2563eb; text-decoration: none;">www.gisfy.co.in</a>
+    </p>
+    <div style="margin: 0 0 24px 0; padding: 0; text-align: left;">
+      <img src="{logo_src}" alt="GISFY" width="160" height="39" style="display: block; width: 160px; max-width: 160px; height: auto; border: 0; outline: none; text-decoration: none;" />
     </div>
   </div>
 </div>
@@ -391,11 +594,14 @@ class CollaborationEmailService:
             country = detect_tender_country(tender, db) if is_adb else None
             kw_str = " ".join([k.keyword for k in tender.keywords]) if tender.keywords else ""
             proj_sec = getattr(getattr(tender, "adb_details", None), "project_sector", None)
-            sec_title, sec_phrase = detect_tender_sector(
+            scope_work = getattr(getattr(tender, "adb_details", None), "scope_of_work", "")
+            scope_para, sec_phrase, sec_title = generate_project_technical_scope(
                 title=tender.title,
+                description=tender.description or project_overview,
                 project_sector=proj_sec,
                 department=tender.department,
-                keywords_str=kw_str
+                keywords_str=kw_str,
+                scope_of_work=scope_work
             )
             subject = f"Exploring JV / Consortium Partnership: {sec_title}"
 
@@ -417,7 +623,8 @@ class CollaborationEmailService:
                 is_adb=is_adb,
                 sender_name=s_info["name"],
                 sender_email=s_info["email"],
-                sector_phrase=sec_phrase
+                sector_phrase=sec_phrase,
+                technical_scope_paragraph=scope_para
             )
             body_html = build_collaboration_email_html(
                 project_name=tender.title,
@@ -427,7 +634,8 @@ class CollaborationEmailService:
                 sender_name=s_info["name"],
                 sender_email=s_info["email"],
                 subject_line=subject,
-                sector_phrase=sec_phrase
+                sector_phrase=sec_phrase,
+                technical_scope_paragraph=scope_para
             )
 
             # 5. Create Draft in Gmail if OAuth available (for state)
@@ -491,7 +699,7 @@ class CollaborationEmailService:
         Maintains strict lifecycle statuses:
         - Draft -> Sending -> Provider Accepted / Found in Sent Items / Delivery Confirmed / Failed
         - Guarantees duplicate send prevention
-        - Ensures From: GISFY Support <support@gisfy.co.in>, CC: bidding@gisfy.co.in, Reply-To: support@gisfy.co.in
+        - Ensures From: GISFY Support <support@gisfy.co.in>, Reply-To: support@gisfy.co.in
         """
         from app.services.live_email_provider import live_email_provider
 
@@ -541,7 +749,7 @@ class CollaborationEmailService:
             body_html=html_content,
             body_text=record.body_text,
             partner_name=record.company_name or record.recipient_name,
-            cc_email="bidding@gisfy.co.in",
+            cc_email=None,
             from_name=from_name,
             from_email=from_email,
             reply_to=reply_to,

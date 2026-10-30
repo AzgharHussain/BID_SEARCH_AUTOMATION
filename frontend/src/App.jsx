@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import './index.css';
 import PartnerOutreachTab from './components/PartnerOutreachTab';
 import AdbCmsTab from './components/AdbCmsTab';
+import DevexProcurementTab from './components/DevexProcurementTab';
+import { getProjectTechnicalScope } from './utils/technicalScope';
 
 // Formats a date value into Date, Month, Year format: "19 Oct 2026"
 export const formatDateDMY = (dateInput) => {
@@ -131,7 +133,7 @@ function App() {
   const [modalSelectedDate, setModalSelectedDate] = useState('2026-10-21'); // Default to today '2026-10-21'
   const [calendarViewMode, setCalendarViewMode] = useState('DUE_DATE'); // 'DUE_DATE' (Completed Deadlines) | 'PUBLISHED_DATE'
 
-  // Collaboration Email Dispatch State (Authentic Partner Outreach via support@gisfy.co.in, CC: bidding@gisfy.co.in)
+  // Collaboration Email Dispatch State (Authentic Partner Outreach via support@gisfy.co.in)
   const [collabRecipients, setCollabRecipients] = useState('');
   const [collabEmailSentResult, setCollabEmailSentResult] = useState(null);
   const [collabSendingEmail, setCollabSendingEmail] = useState(false);
@@ -1097,9 +1099,8 @@ function App() {
         : [outreachPartner?.email].filter(Boolean);
 
       const toMail = recipientsList[0] || outreachPartner?.email || '';
-      const tenderIdStr = selectedPartnerTender?.tender_id || '';
-      const tenderTitleStr = selectedPartnerTender?.title || 'Tender Assignment';
-      const mailSubject = `Exploring JV / Consortium Partnership – Tender #${tenderIdStr}: Collaboration with GISFY`;
+      const scopeData = getProjectTechnicalScope(selectedPartnerTender);
+      const mailSubject = `Exploring JV / Consortium Partnership: ${scopeData.sectorTitle}`;
       
       const isAdb = selectedPartnerTender?.scope === 'adb' 
         || (selectedPartnerTender?.state_name || '').toLowerCase().includes('adb') 
@@ -1115,38 +1116,37 @@ Greetings from GISFY Private Limited, India.
 
 We are an ISO-certified technology company specialising in Geographic Information Systems (GIS), WebGIS, Artificial Intelligence and Machine Learning (AI/ML), data analytics, Management Information Systems (MIS), cloud solutions, and digital transformation.
 
-We are currently exploring a potential Joint Venture (JV) / Consortium partnership for ${tenderTitleStr}.
+We are currently exploring a potential Joint Venture (JV) / Consortium partnership with your organisation to collaborate and work together for the following project:
 
-Considering your organisation's expertise and experience, we believe there may be valuable opportunities for collaboration in the joint submission and implementation of this assignment, subject to the applicable procurement requirements.
+${scopeData.scopeParagraph}
 
-If your organisation is interested in exploring this partnership opportunity, we kindly request you to share the following documents for our preliminary evaluation:
+Considering your organisation's expertise and experience, we believe there are strong synergies for mutual collaboration in the joint execution and implementation of this project.
 
-• Company Profile – Highlighting your organisation's technical capabilities, core competencies, and areas of expertise.
-• Company Registration Certificate – Valid documentation confirming the legal registration of your organisation.
-• Tax Registration Certificate – Applicable tax registration documents issued by the relevant authorities.
-• CVs of Key Experts – Profiles of qualified professionals with expertise relevant to the proposed assignment.
-• Relevant Project Experience – Details of similar completed or ongoing projects, including project descriptions, scope of work, client details, and your organisation's role.
+If your organisation is interested in exploring this partnership opportunity, we kindly request you to share the following preliminary documents for our mutual evaluation:
 
-Upon receiving and reviewing the above documents, we would be pleased to discuss the proposed collaboration structure and share a draft Joint Venture / Consortium Agreement for your review and mutual consideration.
+Company Profile – Highlighting technical capabilities, core competencies, and areas of expertise.
+Company Registration Certificate – Valid documentation confirming legal registration.
+Tax Registration Certificate – Applicable tax registration documents.
+CVs of Key Experts – Profiles of qualified professionals and technical specialists.
+Relevant Project Experience – Overview of similar completed or ongoing projects.
+
+Upon receiving and reviewing these details, we would be pleased to schedule an introductory discussion and share a draft Joint Venture / Consortium Agreement for your review and mutual consideration.
 
 We look forward to your positive response and the opportunity to establish a mutually beneficial partnership.
 
 Thanks & Regards,
-${senderName}
-${senderDept}
+N C Harika | Business Development Executive
 GISFY Private Limited, Ground Floor, DSL Abacus IT Park,
 Uppal, Hyderabad, Telangana – 500039, India
-Email: ${senderEmail}
 Mobile: +91 90631 20678
-Website: www.gisfy.co.in`;
+Website : www.gisfy.co.in`;
 
       if (toMail) {
-        const ccAddresses = 'bidding@gisfy.co.in';
         if (isAdb) {
-          const outlookUrl = `https://outlook.office.com/mail/support@gisfy.co.in/deeplink/compose?to=${encodeURIComponent(toMail)}&cc=${encodeURIComponent(ccAddresses)}&subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBody)}`;
+          const outlookUrl = `https://outlook.office.com/mail/support@gisfy.co.in/deeplink/compose?to=${encodeURIComponent(toMail)}&subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBody)}`;
           window.open(outlookUrl, '_blank');
         } else {
-          const gmailUrl = `https://mail.google.com/mail/u/bidding.gisfy@gmail.com/?view=cm&fs=1&authuser=bidding.gisfy@gmail.com&to=${encodeURIComponent(toMail)}&cc=${encodeURIComponent(ccAddresses)}&su=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBody)}`;
+          const gmailUrl = `https://mail.google.com/mail/u/bidding.gisfy@gmail.com/?view=cm&fs=1&authuser=bidding.gisfy@gmail.com&to=${encodeURIComponent(toMail)}&su=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBody)}`;
           window.open(gmailUrl, '_blank');
         }
       }
@@ -1171,9 +1171,9 @@ Website: www.gisfy.co.in`;
         const collabStatus = data.collaboration_status || (data.sent_folder_verified ? 'Delivery Confirmed' : 'Provider Accepted');
         setPartnersList(prev => prev.map(p => p.id === outreachPartner.id ? { ...p, collaboration_status: collabStatus } : p));
         if (isAdb) {
-          showToast(`📬 Microsoft Outlook opened for ${recipientsList.join(', ')} from GISFY Support <support@gisfy.co.in> (CC: bidding@gisfy.co.in)!`, 'success');
+          showToast(`📬 Microsoft Outlook opened for ${recipientsList.join(', ')} from GISFY Support <support@gisfy.co.in>!`, 'success');
         } else {
-          showToast(`✉️ Gmail opened for ${recipientsList.join(', ')} from GISFY Bidding Operations <bidding.gisfy@gmail.com> (CC: bidding@gisfy.co.in)!`, 'success');
+          showToast(`✉️ Gmail opened for ${recipientsList.join(', ')} from GISFY Bidding Operations <bidding.gisfy@gmail.com>!`, 'success');
         }
 
         // Append real-time command log to terminal
@@ -2621,6 +2621,16 @@ Website: www.gisfy.co.in`;
             <span className="nav-tab-icon">🌐</span>
             <span>ADB CMS</span>
             <span className="nav-tab-badge adb" style={{ background: '#0284c7', color: '#ffffff' }}>{adbCount || 3}</span>
+          </button>
+
+          <button 
+            className={`nav-tab-btn ${currentTab === 'devex' ? 'active' : ''}`}
+            onClick={() => setCurrentTab('devex')}
+            title="Devex Global Procurement Intelligence, World Bank, UNGM & Multilateral Donors"
+          >
+            <span className="nav-tab-icon">🌍</span>
+            <span>Devex Global</span>
+            <span className="nav-tab-badge" style={{ background: '#2563eb', color: '#ffffff' }}>4</span>
           </button>
 
           <button 
@@ -4890,6 +4900,22 @@ Website: www.gisfy.co.in`;
   )}
 
   {/* ========================================================================= */}
+  {/* TAB: DEVEX GLOBAL PROCUREMENT INTELLIGENCE                              */}
+  {/* ========================================================================= */}
+  {currentTab === 'devex' && (
+    <div className="tab-content-wrapper">
+      <DevexProcurementTab
+        API_BASE={API_BASE}
+        showToast={showToast}
+        onSelectIndianState={(stateName) => {
+          setSelectedState(stateName);
+          setCurrentTab('tenders');
+        }}
+      />
+    </div>
+  )}
+
+  {/* ========================================================================= */}
   {/* TAB: TENDER-BASED PARTNER COLLABORATION EMAIL AUTOMATION                 */}
   {/* ========================================================================= */}
   {currentTab === 'outreach' && (
@@ -6383,7 +6409,6 @@ Website: www.gisfy.co.in`;
                     <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '8px', padding: '0.65rem 0.85rem', marginBottom: '0.65rem', fontSize: '0.77rem', color: '#065f46', lineHeight: 1.5 }}>
                       ✉️ <b>Automated Collaboration Email Dispatch:</b><br />
                       • <b>From:</b> GISFY Support &lt;support@gisfy.co.in&gt;<br />
-                      • <b>CC:</b> bidding@gisfy.co.in<br />
                       • <b>To Recommended Partner:</b> <b>{outreachPartner?.name}</b> &lt;{outreachPartner?.email || 'N/A'}&gt;
                     </div>
 
@@ -6431,7 +6456,9 @@ Website: www.gisfy.co.in`;
                         </div>
                         <div style={{ fontSize: '0.78rem', color: '#374151', marginBottom: '0.6rem', lineHeight: 1.5 }}>
                           From: <b>{collabEmailSentResult.from_address || ((selectedPartnerTender?.scope === 'adb' || (selectedPartnerTender?.state_name || '').toLowerCase().includes('adb')) ? 'GISFY Support <support@gisfy.co.in>' : 'GISFY Bidding Operations <bidding.gisfy@gmail.com>')}</b><br/>
-                          CC: <b>{collabEmailSentResult.cc_recipients?.join(', ') || 'bidding@gisfy.co.in'}</b><br/>
+                          {collabEmailSentResult.cc_recipients && collabEmailSentResult.cc_recipients.length > 0 && (
+                            <>CC: <b>{collabEmailSentResult.cc_recipients.join(', ')}</b><br/></>
+                          )}
                           Reply-To: <b>{collabEmailSentResult.sender_email || ((selectedPartnerTender?.scope === 'adb' || (selectedPartnerTender?.state_name || '').toLowerCase().includes('adb')) ? 'support@gisfy.co.in' : 'bidding.gisfy@gmail.com')}</b><br/>
                           To Partner: <b>{collabEmailSentResult.recipients?.join(', ')}</b><br/>
                           Subject: <b>{collabEmailSentResult.subject}</b><br/>
@@ -6441,7 +6468,7 @@ Website: www.gisfy.co.in`;
                         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                           {(selectedPartnerTender?.scope === 'adb' || (selectedPartnerTender?.state_name || '').toLowerCase().includes('adb')) ? (
                             <a 
-                              href={`https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(collabEmailSentResult.recipients?.join(',') || '')}&cc=${encodeURIComponent('bidding@gisfy.co.in')}&subject=${encodeURIComponent(collabEmailSentResult.subject || '')}&body=${encodeURIComponent(collabEmailSentResult.proposal_letter || '')}`}
+                              href={`https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(collabEmailSentResult.recipients?.join(',') || '')}&subject=${encodeURIComponent(collabEmailSentResult.subject || '')}&body=${encodeURIComponent(collabEmailSentResult.proposal_letter || '')}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '6px 12px', background: '#0284c7', color: '#ffffff', borderRadius: '6px', textDecoration: 'none', fontWeight: 700, fontSize: '0.8rem', boxShadow: '0 2px 4px rgba(2, 132, 199, 0.25)' }}
@@ -6450,7 +6477,7 @@ Website: www.gisfy.co.in`;
                             </a>
                           ) : (
                             <a 
-                              href={`https://mail.google.com/mail/u/bidding.gisfy@gmail.com/?view=cm&fs=1&authuser=bidding.gisfy@gmail.com&to=${encodeURIComponent(collabEmailSentResult.recipients?.join(',') || '')}&cc=${encodeURIComponent('bidding@gisfy.co.in')}&su=${encodeURIComponent(collabEmailSentResult.subject || '')}&body=${encodeURIComponent(collabEmailSentResult.proposal_letter || '')}`}
+                              href={`https://mail.google.com/mail/u/bidding.gisfy@gmail.com/?view=cm&fs=1&authuser=bidding.gisfy@gmail.com&to=${encodeURIComponent(collabEmailSentResult.recipients?.join(',') || '')}&su=${encodeURIComponent(collabEmailSentResult.subject || '')}&body=${encodeURIComponent(collabEmailSentResult.proposal_letter || '')}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '6px 12px', background: '#ea4335', color: '#ffffff', borderRadius: '6px', textDecoration: 'none', fontWeight: 700, fontSize: '0.8rem', boxShadow: '0 2px 4px rgba(234, 67, 53, 0.25)' }}
@@ -6468,7 +6495,7 @@ Website: www.gisfy.co.in`;
                           </a>
                           {(selectedPartnerTender?.scope === 'adb' || (selectedPartnerTender?.state_name || '').toLowerCase().includes('adb')) ? (
                             <a 
-                              href={`https://mail.google.com/mail/u/bidding.gisfy@gmail.com/?view=cm&fs=1&authuser=bidding.gisfy@gmail.com&to=${encodeURIComponent(collabEmailSentResult.recipients?.join(',') || '')}&cc=${encodeURIComponent('bidding@gisfy.co.in')}&su=${encodeURIComponent(collabEmailSentResult.subject || '')}&body=${encodeURIComponent(collabEmailSentResult.proposal_letter || '')}`}
+                              href={`https://mail.google.com/mail/u/bidding.gisfy@gmail.com/?view=cm&fs=1&authuser=bidding.gisfy@gmail.com&to=${encodeURIComponent(collabEmailSentResult.recipients?.join(',') || '')}&su=${encodeURIComponent(collabEmailSentResult.subject || '')}&body=${encodeURIComponent(collabEmailSentResult.proposal_letter || '')}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '6px 12px', background: '#f8fafc', color: '#ea4335', border: '1px solid #ea4335', borderRadius: '6px', textDecoration: 'none', fontWeight: 600, fontSize: '0.8rem' }}
@@ -6477,7 +6504,7 @@ Website: www.gisfy.co.in`;
                             </a>
                           ) : (
                             <a 
-                              href={`https://outlook.office.com/mail/support@gisfy.co.in/deeplink/compose?to=${encodeURIComponent(collabEmailSentResult.recipients?.join(',') || '')}&cc=${encodeURIComponent('bidding@gisfy.co.in')}&subject=${encodeURIComponent(collabEmailSentResult.subject || '')}&body=${encodeURIComponent(collabEmailSentResult.proposal_letter || '')}`}
+                              href={`https://outlook.office.com/mail/support@gisfy.co.in/deeplink/compose?to=${encodeURIComponent(collabEmailSentResult.recipients?.join(',') || '')}&subject=${encodeURIComponent(collabEmailSentResult.subject || '')}&body=${encodeURIComponent(collabEmailSentResult.proposal_letter || '')}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '6px 12px', background: '#f8fafc', color: '#0284c7', border: '1px solid #0284c7', borderRadius: '6px', textDecoration: 'none', fontWeight: 600, fontSize: '0.8rem' }}
@@ -6823,7 +6850,7 @@ Website: www.gisfy.co.in`;
                     Email Delivery &amp; SMTP Configuration
                   </h3>
                   <div style={{ color: '#c7d2fe', fontSize: '0.82rem' }}>
-                    Outbound delivery via <b>support@gisfy.co.in</b> (CC: <b>bidding@gisfy.co.in</b>)
+                    Outbound delivery via <b>support@gisfy.co.in</b>
                   </div>
                 </div>
               </div>
@@ -6867,7 +6894,6 @@ Website: www.gisfy.co.in`;
                 <div style={{ fontSize: '0.78rem', color: '#475569', lineHeight: 1.5 }}>
                   • <b>Host:</b> <code>smtp.office365.com</code> (Port 587, STARTTLS)<br/>
                   • <b>Sender:</b> <code>GISFY Support &lt;support@gisfy.co.in&gt;</code><br/>
-                  • <b>Mandatory CC:</b> <code>bidding@gisfy.co.in</code><br/>
                   • <b>Preferred:</b> Microsoft Graph API OAuth 2.0 (configured under the <b>Partner Outreach</b> tab).
                 </div>
               </div>

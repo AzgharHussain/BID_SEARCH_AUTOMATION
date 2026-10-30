@@ -17,7 +17,8 @@ IST_TIMEZONE = pytz.timezone("Asia/Kolkata")
 # Default Schedule Specifications
 DEFAULT_STATES_TIME = "09:30"   # 29 Indian States at 09:30 AM IST
 DEFAULT_ADB_TIME = "10:30"      # ADB Multilateral at 10:30 AM IST
-ADB_ROTATION_QUOTA = 50         # 50 emails per sender rotation
+ADB_ROTATION_QUOTA = 100        # 100 emails per sender rotation
+STATES_DAILY_QUOTA = 100        # 100 emails per day for 29 Indian States
 SEND_SAFETY_INTERVAL = 0.3      # Smooth 0.3s interval between dispatches to prevent socket collisions
 
 CONFIG_FILE = os.path.join(
@@ -50,14 +51,14 @@ class CollaborationScheduler:
     1. 29 Indian States Public Tenders:
        - Dispatched everyday at 09:30 AM IST
        - Sender: bidding.gisfy@gmail.com (N C Harika | Business Development Executive)
-       - CC: bidding@gisfy.co.in
+       - Limit: 100 emails per day
        - Sent automatically without delay.
     2. ADB Multilateral Projects:
        - Dispatched everyday at 10:30 AM IST
-       - Sender rotation with strict 50-email quota:
-         * Batch 1: First 50 emails through support@gisfy.co.in (N C Harika | Business Development Executive)
-         * Batch 2: Next 50 emails through farhath@gisfy.co.in (Farhath | Business Development Executive)
-         * Batch 3: Next 50 emails through firza@gisfy.co.in (Firza | Business Development Executive)
+       - Sender rotation with strict 100-email quota:
+         * Batch 1: First 100 emails through support@gisfy.co.in (N C Harika | Business Development Executive)
+         * Batch 2: Next 100 emails through farhath@gisfy.co.in (Farhath | Business Development Executive)
+         * Batch 3: Next 100 emails through firza@gisfy.co.in (Firza | Business Development Executive)
          * Rotation repeats continuously.
        - Sent automatically without delay.
     """
@@ -74,6 +75,7 @@ class CollaborationScheduler:
         self.states_minute = 30
         self.states_sender_email = "bidding.gisfy@gmail.com"
         self.states_sender_name = "N C Harika | Business Development Executive"
+        self.states_daily_quota = STATES_DAILY_QUOTA
 
         # ADB Multilateral Schedule (Default 10:30 AM IST)
         self.adb_schedule_time = DEFAULT_ADB_TIME
@@ -83,12 +85,13 @@ class CollaborationScheduler:
         self.adb_senders = list(ADB_SENDERS_ROTATION)
 
         # Active Sending Window & Settings
+        self.days_of_week = "mon-fri"    # Monday to Friday business days
         self.window_start = dtime(9, 0)
         self.window_end = dtime(18, 0)
-        self.pilot_mode = False          # Production automated mode
-        self.auto_send_enabled = True    # Automated dispatches active
+        self.pilot_mode = True           # Guarded mode
+        self.auto_send_enabled = False   # DISABLED pending user verification - do NOT send emails automatically
         self.max_daily_limit = 5000      # Uncapped production allowance
-        self.pilot_limit = 50
+        self.pilot_limit = 100
 
         # Job Identifiers
         self.states_job_id = "daily_states_dispatch_0930_ist"
@@ -132,6 +135,9 @@ class CollaborationScheduler:
                         self.states_minute = int(parts[1])
                         self.states_schedule_time = f"{self.states_hour:02d}:{self.states_minute:02d}"
 
+                if "states_daily_quota" in data:
+                    self.states_daily_quota = int(data["states_daily_quota"])
+
                 if "adb_rotation_quota" in data:
                     self.adb_rotation_quota = int(data["adb_rotation_quota"])
 
@@ -145,6 +151,9 @@ class CollaborationScheduler:
                     if len(ep) >= 2:
                         self.window_end = dtime(int(ep[0]), int(ep[1]))
 
+                if "days_of_week" in data:
+                    self.days_of_week = str(data["days_of_week"]).strip().lower()
+
                 if "pilot_mode" in data:
                     self.pilot_mode = bool(data["pilot_mode"])
 
@@ -152,7 +161,7 @@ class CollaborationScheduler:
                     self.auto_send_enabled = bool(data["auto_send_enabled"])
                     collaboration_email_service.auto_send_enabled = self.auto_send_enabled
 
-                print(f"⚙️ [Collaboration Scheduler] Loaded settings: 29 States={self.get_formatted_states_time()}, ADB={self.get_formatted_adb_time()} (Quota: {self.adb_rotation_quota} per sender)")
+                print(f"⚙️ [Collaboration Scheduler] Loaded settings: 29 States={self.get_formatted_states_time()} (Quota: {self.states_daily_quota}), ADB={self.get_formatted_adb_time()} (Quota: {self.adb_rotation_quota} per sender), Days={self.days_of_week}")
             except Exception as e:
                 print(f"⚠️ [Scheduler Config] Error loading {self.config_file}: {e}")
 
@@ -166,13 +175,15 @@ class CollaborationScheduler:
                 "states_formatted_time": self.get_formatted_states_time(),
                 "states_sender_email": self.states_sender_email,
                 "states_sender_name": self.states_sender_name,
+                "states_daily_quota": self.states_daily_quota,
                 "adb_schedule_time": self.adb_schedule_time,
                 "adb_hour": self.adb_hour,
                 "adb_minute": self.adb_minute,
                 "adb_formatted_time": self.get_formatted_adb_time(),
                 "adb_rotation_quota": self.adb_rotation_quota,
                 "adb_senders_rotation": [s["email"] for s in self.adb_senders],
-                "mandatory_cc": "bidding@gisfy.co.in",
+                "days_of_week": self.days_of_week,
+                "mandatory_cc": None,
                 "window_start": self.window_start.strftime("%H:%M"),
                 "window_end": self.window_end.strftime("%H:%M"),
                 "pilot_mode": self.pilot_mode,
@@ -204,6 +215,7 @@ class CollaborationScheduler:
         states_time: Optional[str] = None,
         adb_time: Optional[str] = None,
         adb_quota: Optional[int] = None,
+        states_quota: Optional[int] = None,
         auto_send_enabled: Optional[bool] = None,
         window_start: Optional[str] = None,
         window_end: Optional[str] = None
@@ -227,6 +239,9 @@ class CollaborationScheduler:
 
         if adb_quota is not None:
             self.adb_rotation_quota = max(1, int(adb_quota))
+
+        if states_quota is not None:
+            self.states_daily_quota = max(1, int(states_quota))
 
         if auto_send_enabled is not None:
             self.auto_send_enabled = bool(auto_send_enabled)
@@ -285,8 +300,8 @@ class CollaborationScheduler:
     def _reschedule_all_jobs(self):
         """Reschedule both 29 States and ADB daily jobs."""
         try:
-            # 1. 29 States Daily Job at 09:30 AM IST
-            states_trigger = CronTrigger(hour=self.states_hour, minute=self.states_minute, timezone=IST_TIMEZONE)
+            # 1. 29 States Daily Job at 09:30 AM IST (Monday to Friday)
+            states_trigger = CronTrigger(day_of_week=self.days_of_week, hour=self.states_hour, minute=self.states_minute, timezone=IST_TIMEZONE)
             if self.scheduler.get_job(self.states_job_id):
                 self.scheduler.reschedule_job(self.states_job_id, trigger=states_trigger)
             else:
@@ -299,8 +314,8 @@ class CollaborationScheduler:
                     misfire_grace_time=3600
                 )
 
-            # 2. ADB Multilateral Daily Job at 10:30 AM IST
-            adb_trigger = CronTrigger(hour=self.adb_hour, minute=self.adb_minute, timezone=IST_TIMEZONE)
+            # 2. ADB Multilateral Daily Job at 10:30 AM IST (Monday to Friday)
+            adb_trigger = CronTrigger(day_of_week=self.days_of_week, hour=self.adb_hour, minute=self.adb_minute, timezone=IST_TIMEZONE)
             if self.scheduler.get_job(self.adb_job_id):
                 self.scheduler.reschedule_job(self.adb_job_id, trigger=adb_trigger)
             else:
@@ -308,11 +323,11 @@ class CollaborationScheduler:
                     func=self.execute_adb_rotation_dispatch,
                     trigger=adb_trigger,
                     id=self.adb_job_id,
-                    name=f"ADB Multilateral Daily Outreach ({self.get_formatted_adb_time()}) with 50-Email Rotation",
+                    name=f"ADB Multilateral Daily Outreach ({self.get_formatted_adb_time()}) with {self.adb_rotation_quota}-Email Rotation",
                     replace_existing=True,
                     misfire_grace_time=3600
                 )
-            print(f"🕒 [Collaboration Scheduler] All jobs rescheduled: States={self.get_formatted_states_time()}, ADB={self.get_formatted_adb_time()}")
+            print(f"🕒 [Collaboration Scheduler] All jobs rescheduled: States={self.get_formatted_states_time()} (Quota: {self.states_daily_quota}), ADB={self.get_formatted_adb_time()} (Quota: {self.adb_rotation_quota})")
         except Exception as e:
             print(f"❌ [Collaboration Scheduler] Error rescheduling jobs: {e}")
 
@@ -337,8 +352,12 @@ class CollaborationScheduler:
 
             self.scheduler.start()
             self.is_running = True
-            self.is_paused = False
-            print(f"🚀 [Collaboration Scheduler] Started: 29 States ({self.get_formatted_states_time()}) + ADB 50-Rotation ({self.get_formatted_adb_time()}) active.")
+            if not self.auto_send_enabled or self.is_paused:
+                self.pause()
+                print(f"⏸️ [Collaboration Scheduler] Started in PAUSED/DISABLED mode (Auto-send: OFF pending user verification).")
+            else:
+                self.is_paused = False
+                print(f"🚀 [Collaboration Scheduler] Started: 29 States ({self.get_formatted_states_time()}) + ADB {self.adb_rotation_quota}-Rotation ({self.get_formatted_adb_time()}) active.")
         except Exception as e:
             print(f"❌ [Collaboration Scheduler] Error starting scheduler: {e}")
 
@@ -391,16 +410,19 @@ class CollaborationScheduler:
         - Time: Everyday at 09:30 AM IST
         - Sender: bidding.gisfy@gmail.com
         - Sender Name: N C Harika | Business Development Executive
-        - CC: bidding@gisfy.co.in
         - Dispatches automatically without delay.
         """
+        if not self.auto_send_enabled or self.is_paused:
+            print("⏸️ [States 09:30 AM Dispatch] Auto-send disabled pending user verification. Skipping.")
+            return {"status": "paused", "message": "Auto-send is disabled pending user verification."}
+
         db = SessionLocal()
         start_time = datetime.utcnow()
         summary = {
             "schedule": "29 Indian States Outreach (09:30 AM IST)",
             "sender_email": "bidding.gisfy@gmail.com",
             "sender_name": "N C Harika | Business Development Executive",
-            "cc": "bidding@gisfy.co.in",
+            "cc": None,
             "started_at": start_time.isoformat(),
             "eligible_found": 0,
             "dispatched_count": 0,
@@ -415,13 +437,12 @@ class CollaborationScheduler:
                 models.CollaborationEmail.is_test_email == False
             ).order_by(models.CollaborationEmail.id.asc())
 
-            if batch_limit and batch_limit > 0:
-                candidate_drafts = query.limit(batch_limit).all()
-            else:
-                candidate_drafts = query.all()
+            limit_to_use = batch_limit if (batch_limit and batch_limit > 0) else self.states_daily_quota
+            candidate_drafts = query.limit(limit_to_use).all()
 
             summary["eligible_found"] = len(candidate_drafts)
-            print(f"🇮🇳 [States 09:30 AM Dispatch] Found {len(candidate_drafts)} candidate drafts to send via bidding.gisfy@gmail.com")
+            summary["daily_quota"] = limit_to_use
+            print(f"🇮🇳 [States 09:30 AM Dispatch] Found {len(candidate_drafts)} candidate drafts (Quota: {limit_to_use}) to send via bidding.gisfy@gmail.com")
 
             for draft in candidate_drafts:
                 try:
@@ -452,7 +473,7 @@ class CollaborationScheduler:
                 emails_sent=summary["dispatched_count"],
                 errors_count=summary["failed_count"],
                 status="success" if summary["failed_count"] == 0 else "completed_with_errors",
-                log_details=f"Dispatched {summary['dispatched_count']} 29 States outreach emails from bidding.gisfy@gmail.com (CC: bidding@gisfy.co.in) at 09:30 AM IST."
+                log_details=f"Dispatched {summary['dispatched_count']} 29 States outreach emails from bidding.gisfy@gmail.com at 09:30 AM IST."
             )
             db.add(log_entry)
             db.commit()
@@ -472,21 +493,27 @@ class CollaborationScheduler:
     # 2. ADB MULTILATERAL OUTREACH: 10:30 AM IST (50 support -> 50 farhath -> 50 firza)
     # --------------------------------------------------------------------------
 
-    def execute_adb_rotation_dispatch(self, quota_per_sender: int = 50) -> Dict[str, Any]:
+    def execute_adb_rotation_dispatch(self, quota_per_sender: Optional[int] = None) -> Dict[str, Any]:
         """
         Dispatches ADB Multilateral outreach emails:
         - Time: Everyday at 10:30 AM IST
         - Strict rotation sequence:
-          1. 50 emails sent through support@gisfy.co.in (N C Harika | Business Development Executive)
-          2. Once 50 emails completed, next 50 emails sent through farhath@gisfy.co.in (Farhath | Business Development Executive)
-          3. Once 50 emails completed, next 50 emails sent through firza@gisfy.co.in (Firza | Business Development Executive)
+          1. 100 emails sent through support@gisfy.co.in (N C Harika | Business Development Executive)
+          2. Once 100 emails completed, next 100 emails sent through farhath@gisfy.co.in (Farhath | Business Development Executive)
+          3. Once 100 emails completed, next 100 emails sent through firza@gisfy.co.in (Firza | Business Development Executive)
         - Sent automatically without delay.
         """
+        effective_quota = quota_per_sender if (quota_per_sender and quota_per_sender > 0) else self.adb_rotation_quota
+
+        if not self.auto_send_enabled or self.is_paused:
+            print("⏸️ [ADB 10:30 AM Dispatch] Auto-send disabled pending user verification. Skipping.")
+            return {"status": "paused", "message": "Auto-send is disabled pending user verification."}
+
         db = SessionLocal()
         start_time = datetime.utcnow()
         summary = {
             "schedule": "ADB Multilateral Outreach (10:30 AM IST)",
-            "rotation_quota_per_sender": quota_per_sender,
+            "rotation_quota_per_sender": effective_quota,
             "started_at": start_time.isoformat(),
             "total_dispatched": 0,
             "total_failed": 0,
@@ -503,23 +530,23 @@ class CollaborationScheduler:
                 tranche_summary = {
                     "sender_email": target_email,
                     "sender_name": target_name,
-                    "target_quota": quota_per_sender,
+                    "target_quota": effective_quota,
                     "sent_count": 0,
                     "failed_count": 0,
                     "errors": []
                 }
 
-                # 1. Fetch up to quota_per_sender candidate drafts specifically assigned to this sender
+                # 1. Fetch up to effective_quota candidate drafts specifically assigned to this sender
                 drafts = db.query(models.CollaborationEmail).filter(
                     models.CollaborationEmail.scope == "adb",
                     models.CollaborationEmail.status.in_(["draft", "approved", "pending"]),
                     models.CollaborationEmail.is_test_email == False,
                     models.CollaborationEmail.sender_email == target_email
-                ).order_by(models.CollaborationEmail.id.asc()).limit(quota_per_sender).all()
+                ).order_by(models.CollaborationEmail.id.asc()).limit(effective_quota).all()
 
                 # 2. If fewer than quota, take any remaining unassigned pending ADB drafts and assign to this sender
-                if len(drafts) < quota_per_sender:
-                    needed = quota_per_sender - len(drafts)
+                if len(drafts) < effective_quota:
+                    needed = effective_quota - len(drafts)
                     existing_ids = [d.id for d in drafts]
                     extra_drafts = db.query(models.CollaborationEmail).filter(
                         models.CollaborationEmail.scope == "adb",
@@ -532,7 +559,7 @@ class CollaborationScheduler:
                         collaboration_email_service.assign_and_render_sender(db, ed, target_email, target_name)
                     drafts.extend(extra_drafts)
 
-                print(f"🌐 [ADB 10:30 AM Dispatch] Tranche for {target_name} <{target_email}>: {len(drafts)} drafts ready to send")
+                print(f"🌐 [ADB 10:30 AM Dispatch] Tranche for {target_name} <{target_email}>: {len(drafts)} drafts ready to send (Quota: {effective_quota})")
 
                 # 3. Dispatch this sender's tranche automatically without delay
                 for draft in drafts:
@@ -560,7 +587,7 @@ class CollaborationScheduler:
                         tranche_summary["errors"].append(f"Draft #{draft.id} error: {ex}")
 
                 summary["tranches"].append(tranche_summary)
-                print(f"✅ [ADB 10:30 AM Dispatch] Completed {tranche_summary['sent_count']}/{quota_per_sender} for {target_email}")
+                print(f"✅ [ADB 10:30 AM Dispatch] Completed {tranche_summary['sent_count']}/{effective_quota} for {target_email}")
 
             # Record workflow log
             log_entry = models.CollaborationWorkflowLog(
@@ -572,7 +599,7 @@ class CollaborationScheduler:
                 emails_sent=summary["total_dispatched"],
                 errors_count=summary["total_failed"],
                 status="success" if summary["total_failed"] == 0 else "completed_with_errors",
-                log_details=f"ADB 10:30 AM Rotation Completed: Dispatched {summary['total_dispatched']} emails across support@gisfy.co.in (50), farhath@gisfy.co.in (50), firza@gisfy.co.in (50). CC: bidding@gisfy.co.in."
+                log_details=f"ADB 10:30 AM Rotation Completed: Dispatched {summary['total_dispatched']} emails across support@gisfy.co.in ({effective_quota}), farhath@gisfy.co.in ({effective_quota}), firza@gisfy.co.in ({effective_quota})."
             )
             db.add(log_entry)
             db.commit()
@@ -622,7 +649,9 @@ class CollaborationScheduler:
 
     def execute_daily_workflow(self, cycle_type: str = "daily_scheduled") -> Dict[str, Any]:
         """Master runner executing both 29 States and ADB dispatches."""
-        res_states = self.execute_states_dispatch(batch_limit=50)
+        if not self.auto_send_enabled or self.is_paused:
+            return {"status": "paused", "message": "Auto-send is disabled pending user verification."}
+        res_states = self.execute_states_dispatch(batch_limit=self.states_daily_quota)
         res_adb = self.execute_adb_rotation_dispatch(quota_per_sender=self.adb_rotation_quota)
         return {
             "cycle_type": cycle_type,
@@ -680,7 +709,9 @@ class CollaborationScheduler:
                 "formatted_time": formatted_states,
                 "sender_email": self.states_sender_email,
                 "sender_name": self.states_sender_name,
-                "mandatory_cc": "bidding@gisfy.co.in",
+                "daily_quota": self.states_daily_quota,
+                "days": "Monday to Friday (Mon-Fri)",
+                "mandatory_cc": None,
                 "next_run_time_ist": next_states_run,
                 "sent_today_24h": sent_today_states,
                 "pending_drafts_count": pending_states
@@ -690,12 +721,13 @@ class CollaborationScheduler:
                 "time": self.adb_schedule_time,
                 "formatted_time": formatted_adb,
                 "rotation_quota_per_sender": self.adb_rotation_quota,
+                "days": "Monday to Friday (Mon-Fri)",
                 "senders_rotation": [
-                    "1️⃣ support@gisfy.co.in (50 emails)",
-                    "2️⃣ farhath@gisfy.co.in (50 emails)",
-                    "3️⃣ firza@gisfy.co.in (50 emails)"
+                    f"1️⃣ support@gisfy.co.in ({self.adb_rotation_quota} emails)",
+                    f"2️⃣ farhath@gisfy.co.in ({self.adb_rotation_quota} emails)",
+                    f"3️⃣ firza@gisfy.co.in ({self.adb_rotation_quota} emails)"
                 ],
-                "mandatory_cc": "bidding@gisfy.co.in",
+                "mandatory_cc": None,
                 "next_run_time_ist": next_adb_run,
                 "sent_today_24h": sent_today_adb,
                 "pending_drafts_count": pending_adb

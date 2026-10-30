@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { getProjectTechnicalScope } from '../utils/technicalScope';
 
 const JURISDICTIONS = [
   { value: 'ALL', label: 'All Jurisdictions (29 Indian States & ADB)' },
@@ -59,7 +60,7 @@ export default function PartnerOutreachTab({ API_BASE, showToast }) {
 
   // Single Approved Test Email State
   const [showTestModal, setShowTestModal] = useState(false);
-  const [testRecipient, setTestRecipient] = useState('bidding@gisfy.co.in');
+  const [testRecipient, setTestRecipient] = useState('support@gisfy.co.in');
   const [testNotes, setTestNotes] = useState('User-approved single test email verification');
   const [testSending, setTestSending] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -80,7 +81,7 @@ export default function PartnerOutreachTab({ API_BASE, showToast }) {
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [statesTimeInput, setStatesTimeInput] = useState('09:30');
   const [adbTimeInput, setAdbTimeInput] = useState('10:30');
-  const [adbQuotaInput, setAdbQuotaInput] = useState(50);
+  const [adbQuotaInput, setAdbQuotaInput] = useState(100);
   const [scheduleTimeInput, setScheduleTimeInput] = useState('09:30');
   const [windowStartInput, setWindowStartInput] = useState('09:00');
   const [windowEndInput, setWindowEndInput] = useState('18:00');
@@ -254,17 +255,7 @@ export default function PartnerOutreachTab({ API_BASE, showToast }) {
     const recipient = draft.recipient_email || '';
     const subject = draft.subject || '';
     const composeBody = draft.body_text || '';
-    const ccEmails = 'bidding@gisfy.co.in';
     const isAdb = draft.scope === 'adb' || draft.is_adb || (draft.state_name || '').toLowerCase().includes('adb');
-
-    // Automatically copy mandatory CC to clipboard for instant pasting if web client drops it
-    try {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(ccEmails);
-      }
-    } catch (e) {
-      console.warn('Clipboard write error', e);
-    }
 
     if (isAdb) {
       // Dynamic routing to specific mailbox (support@gisfy.co.in, farhath@gisfy.co.in, or firza@gisfy.co.in)
@@ -279,19 +270,17 @@ export default function PartnerOutreachTab({ API_BASE, showToast }) {
         senderName = 'N C Harika | Business Development Executive';
       }
 
-      // Query-in-query format + explicit cc parameter to maximize OWA compatibility
-      const toWithCc = recipient ? `${recipient}?cc=${ccEmails}` : '';
-      const outlookWebUrl = `https://outlook.office.com/mail/${senderEmail}/deeplink/compose?to=${encodeURIComponent(toWithCc)}&cc=${encodeURIComponent(ccEmails)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(composeBody)}`;
+      const outlookWebUrl = `https://outlook.office.com/mail/${senderEmail}/deeplink/compose?to=${encodeURIComponent(recipient)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(composeBody)}`;
       window.open(outlookWebUrl, '_blank');
       if (showToast) {
-        showToast(`📬 Microsoft Outlook opened from ${senderName} <${senderEmail}>! CC (${ccEmails}) copied to clipboard.`, 'success');
+        showToast(`📬 Microsoft Outlook opened from ${senderName} <${senderEmail}>!`, 'success');
       }
     } else {
       // Explicitly route to bidding.gisfy@gmail.com account in Gmail
-      const gmailWebUrl = `https://mail.google.com/mail/u/bidding.gisfy@gmail.com/?view=cm&fs=1&authuser=bidding.gisfy@gmail.com&to=${encodeURIComponent(recipient)}&cc=${encodeURIComponent(ccEmails)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(composeBody)}`;
+      const gmailWebUrl = `https://mail.google.com/mail/u/bidding.gisfy@gmail.com/?view=cm&fs=1&authuser=bidding.gisfy@gmail.com&to=${encodeURIComponent(recipient)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(composeBody)}`;
       window.open(gmailWebUrl, '_blank');
       if (showToast) {
-        showToast(`✉️ Gmail opened from N C Harika <bidding.gisfy@gmail.com> (CC: ${ccEmails})!`, 'success');
+        showToast(`✉️ Gmail opened from N C Harika <bidding.gisfy@gmail.com>!`, 'success');
       }
     }
   };
@@ -317,9 +306,9 @@ export default function PartnerOutreachTab({ API_BASE, showToast }) {
             const senderEmail = data.sender_email || targetDraft?.sender_email || 'support@gisfy.co.in';
             const sLower = senderEmail.toLowerCase();
             const senderName = sLower.includes('farhath') ? 'Farhath | Business Development Executive' : (sLower.includes('firza') || sLower.includes('irza') ? 'Firza | Business Development Executive' : 'N C Harika | Business Development Executive');
-            showToast(`📬 Microsoft Outlook opened for ${data.recipient || targetDraft?.recipient_email || 'partner'} from ${senderName} <${senderEmail}> (CC: bidding@gisfy.co.in)! Click 'Send' in Outlook to complete delivery.`, 'success');
+            showToast(`📬 Microsoft Outlook opened for ${data.recipient || targetDraft?.recipient_email || 'partner'} from ${senderName} <${senderEmail}>! Click 'Send' in Outlook to complete delivery.`, 'success');
           } else {
-            showToast(`✉️ Gmail opened for ${data.recipient || targetDraft?.recipient_email || 'partner'} from N C Harika | Business Development Executive <bidding.gisfy@gmail.com> (CC: bidding@gisfy.co.in)! Click 'Send' in Gmail to complete delivery.`, 'success');
+            showToast(`✉️ Gmail opened for ${data.recipient || targetDraft?.recipient_email || 'partner'} from N C Harika | Business Development Executive <bidding.gisfy@gmail.com>! Click 'Send' in Gmail to complete delivery.`, 'success');
           }
         }
         fetchDashboard();
@@ -487,11 +476,36 @@ export default function PartnerOutreachTab({ API_BASE, showToast }) {
         const data = await res.json();
         if (showToast) showToast(`💬 Checked inbox: ${data.replies_detected} new partner replies detected!`, 'success');
         fetchDashboard();
+        fetchDrafts();
       }
     } catch (err) {
       if (showToast) showToast('Failed to check replies', 'error');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleRecordReply = async (emailId) => {
+    const snippet = prompt("Enter the partner's reply message or response notes (e.g. 'Interested in JV for this GIS project, please send RFP documents'):", "Interested in JV partnership for this project. Please share technical documents and RFP.");
+    if (!snippet) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/collaboration/record-reply/${emailId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ response_status: 'replied', response_snippet: snippet })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (showToast) showToast(`✅ Partner reply linked to project: ${data.project_contacted_for}`, 'success');
+        fetchDashboard();
+        fetchDrafts();
+        setSubTab('replies');
+      } else {
+        const err = await res.json();
+        if (showToast) showToast(err.detail || 'Failed to record reply', 'error');
+      }
+    } catch (e) {
+      if (showToast) showToast('Error recording reply: ' + e.message, 'error');
     }
   };
 
@@ -512,7 +526,7 @@ export default function PartnerOutreachTab({ API_BASE, showToast }) {
       const res = await fetch(`${API_BASE}/api/collaboration/toggle-pilot-mode?enabled=${enable}`, { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
-        if (showToast) showToast(`⚙️ Switched to ${enable ? 'Pilot Mode (5 emails/day)' : 'Production Mode (50 emails/day)'}`, 'info');
+        if (showToast) showToast(`⚙️ Switched to ${enable ? 'Pilot Mode (10 emails/day)' : 'Production Mode (100 emails/sender/day)'}`, 'info');
         fetchDashboard();
       }
     } catch (err) {
@@ -935,7 +949,7 @@ export default function PartnerOutreachTab({ API_BASE, showToast }) {
 
   const handleSendTestEmail = async (e) => {
     e.preventDefault();
-    const recipient = testRecipient?.trim() || 'bidding@gisfy.co.in';
+    const recipient = testRecipient?.trim() || 'support@gisfy.co.in';
     if (!recipient || !recipient.includes('@')) {
       if (showToast) showToast('Please enter a valid approved test recipient email', 'error');
       return;
@@ -943,44 +957,43 @@ export default function PartnerOutreachTab({ API_BASE, showToast }) {
     setTestSending(true);
     setTestResult(null);
 
-    const testSubject = 'Exploring JV / Consortium Partnership – Test Verification Ref #TEST-1';
+    const activeTender = tenders?.find(t => String(t.id) === String(selectedTenderId)) || null;
+    const scopeData = getProjectTechnicalScope(activeTender);
+
+    const testSubject = `Exploring JV / Consortium Partnership: ${scopeData.sectorTitle}`;
     const testBody = `Dear Team,
 
 Greetings from GISFY Private Limited, India.
 
 We are an ISO-certified technology company specialising in Geographic Information Systems (GIS), WebGIS, Artificial Intelligence and Machine Learning (AI/ML), data analytics, Management Information Systems (MIS), cloud solutions, and digital transformation.
 
-We are currently exploring a potential Joint Venture (JV) / Consortium partnership for GISFY Procurement Intelligence System Verification.
+We are currently exploring a potential Joint Venture (JV) / Consortium partnership with your organisation to collaborate and work together for the following project:
 
-Assignment Overview & Technical Scope:
-End-to-end verification of Microsoft 365 Exchange Online outbound email delivery from GISFY Support <support@gisfy.co.in>, mandatory CC synchronization to bidding@gisfy.co.in, and Outlook Sent Items tracking.
+${scopeData.scopeParagraph}
 
-Considering your organisation's expertise and experience, we believe there may be valuable opportunities for collaboration in the joint submission and implementation of this assignment, subject to the applicable procurement requirements.
+Considering your organisation's expertise and experience, we believe there are strong synergies for mutual collaboration in the joint execution and implementation of this project.
 
-If your organisation is interested in exploring this partnership opportunity, we kindly request you to share the following documents for our preliminary evaluation:
+If your organisation is interested in exploring this partnership opportunity, we kindly request you to share the following preliminary documents for our mutual evaluation:
 
-• Company Profile – Highlighting your organisation's technical capabilities, core competencies, and areas of expertise.
-• Company Registration Certificate – Valid documentation confirming the legal registration of your organisation.
-• Tax Registration Certificate – Applicable tax registration documents issued by the relevant authorities.
-• CVs of Key Experts – Profiles of qualified professionals with expertise relevant to the proposed assignment.
-• Relevant Project Experience – Details of similar completed or ongoing projects, including project descriptions, scope of work, client details, and your organisation's role.
+Company Profile – Highlighting technical capabilities, core competencies, and areas of expertise.
+Company Registration Certificate – Valid documentation confirming legal registration.
+Tax Registration Certificate – Applicable tax registration documents.
+CVs of Key Experts – Profiles of qualified professionals and technical specialists.
+Relevant Project Experience – Overview of similar completed or ongoing projects.
 
-Upon receiving and reviewing the above documents, we would be pleased to discuss the proposed collaboration structure and share a draft Joint Venture / Consortium Agreement for your review and mutual consideration.
+Upon receiving and reviewing these details, we would be pleased to schedule an introductory discussion and share a draft Joint Venture / Consortium Agreement for your review and mutual consideration.
 
 We look forward to your positive response and the opportunity to establish a mutually beneficial partnership.
 
 Thanks & Regards,
-GISFY Support Team
-GISFY Support & Partnerships Team
+N C Harika | Business Development Executive
 GISFY Private Limited, Ground Floor, DSL Abacus IT Park,
 Uppal, Hyderabad, Telangana – 500039, India
-Email: support@gisfy.co.in
 Mobile: +91 90631 20678
-Website: www.gisfy.co.in`;
+Website : www.gisfy.co.in`;
 
-    const ccEmails = 'bidding@gisfy.co.in';
-    const mailtoUrl = `mailto:${encodeURIComponent(recipient)}?cc=${encodeURIComponent(ccEmails)}&subject=${encodeURIComponent(testSubject)}&body=${encodeURIComponent(testBody)}`;
-    const outlookWebUrl = `https://outlook.office.com/mail/support@gisfy.co.in/deeplink/compose?to=${encodeURIComponent(recipient)}&cc=${encodeURIComponent(ccEmails)}&subject=${encodeURIComponent(testSubject)}&body=${encodeURIComponent(testBody)}`;
+    const mailtoUrl = `mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(testSubject)}&body=${encodeURIComponent(testBody)}`;
+    const outlookWebUrl = `https://outlook.office.com/mail/support@gisfy.co.in/deeplink/compose?to=${encodeURIComponent(recipient)}&subject=${encodeURIComponent(testSubject)}&body=${encodeURIComponent(testBody)}`;
 
     // If direct mail client is active, open Microsoft Outlook directly (NOT Apple Mail!)
     if (providerStatus?.active_provider === 'direct_mail') {
@@ -1112,12 +1125,17 @@ Website: www.gisfy.co.in`;
     .filter(d => ['draft', 'pending_approval', 'approved', 'Sending'].includes(d.status) && !d.is_test_email)
     .filter(matchesFilter);
   const sentEmailsList = drafts
-    .filter(d => ['sent', 'Provider Accepted', 'Found in Sent Items', 'Delivery Confirmed', 'replied', 'failed', 'Failed', 'bounced'].includes(d.status) || d.is_test_email)
+    .filter(d => ['sent', 'Provider Accepted', 'Found in Sent Items', 'Delivery Confirmed', 'replied', 'Replied', 'failed', 'Failed', 'bounced'].includes(d.status) || d.is_test_email)
+    .filter(matchesFilter);
+  const repliedEmailsList = drafts
+    .filter(d => d.response_status === 'replied' || ['replied', 'Replied'].includes(d.status))
     .filter(matchesFilter);
 
-  const totalPages = Math.ceil((subTab === 'drafts' ? pendingDraftsList.length : sentEmailsList.length) / PAGE_SIZE) || 1;
+  const activeCount = subTab === 'drafts' ? pendingDraftsList.length : (subTab === 'sent' ? sentEmailsList.length : repliedEmailsList.length);
+  const totalPages = Math.ceil(activeCount / PAGE_SIZE) || 1;
   const paginatedPendingDrafts = pendingDraftsList.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
   const paginatedSentEmails = sentEmailsList.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const paginatedRepliedEmails = repliedEmailsList.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   const renderStatusBadge = (status, sentFolderVerified) => {
     const s = String(status || '').toLowerCase();
@@ -1181,11 +1199,9 @@ Website: www.gisfy.co.in`;
             <span>•</span>
             <span>Sender / From: <strong>GISFY Support &lt;support@gisfy.co.in&gt;</strong></span>
             <span>•</span>
-            <span>Mandatory CC: <strong>bidding@gisfy.co.in</strong></span>
-            <span>•</span>
             <span>Reply-To: <strong>support@gisfy.co.in</strong></span>
             <span>•</span>
-            <span>Daily Quota: <strong>Max 50 Emails / Rolling 24h</strong></span>
+            <span>Daily Quota: <strong>Max 100 Emails / Sender / Rolling 24h</strong></span>
           </div>
         </div>
 
@@ -1281,13 +1297,13 @@ Website: www.gisfy.co.in`;
             </div>
             <div style={{ fontSize: '0.78rem', color: '#475569', marginTop: '0.2rem', display: 'flex', flexDirection: 'column', gap: '2px' }}>
               <div>
-                🌐 <b>ADB Mails:</b> From: <b>GISFY Support &lt;support@gisfy.co.in&gt;</b> (via Outlook) | CC: <b>bidding@gisfy.co.in</b>
+                🌐 <b>ADB Mails:</b> From: <b>GISFY Support &lt;support@gisfy.co.in&gt;</b> (via Outlook)
               </div>
               <div>
-                🏛️ <b>29 States Mails:</b> From: <b>GISFY Bidding Operations &lt;bidding.gisfy@gmail.com&gt;</b> (via Gmail) | CC: <b>bidding@gisfy.co.in</b>
+                🏛️ <b>29 States Mails:</b> From: <b>GISFY Bidding Operations &lt;bidding.gisfy@gmail.com&gt;</b> (via Gmail)
               </div>
               <div style={{ color: '#047857', fontWeight: 600, marginTop: '2px' }}>
-                Delivery: <b>Direct to Client Inbox, CC &amp; Sent Items Tracking Active</b> ✅
+                Delivery: <b>Direct to Client Inbox &amp; Sent Items Tracking Active</b> ✅
               </div>
             </div>
           </div>
@@ -1418,13 +1434,18 @@ Website: www.gisfy.co.in`;
           <div className="outreach-kpi-sub">Verified delivery evidence</div>
         </div>
 
-        <div className="outreach-kpi-card" style={{ borderColor: '#fed7aa' }}>
+        <div
+          className="outreach-kpi-card"
+          style={{ borderColor: '#fed7aa', cursor: 'pointer', background: subTab === 'replies' ? '#fff7ed' : undefined }}
+          onClick={() => { setSubTab('replies'); setCurrentPage(1); }}
+          title="Click to view all partner replies and see for which project we contacted them"
+        >
           <div className="outreach-kpi-top">
             <span className="outreach-kpi-label" style={{ color: '#c2410c' }}>Partner Responses</span>
             <span className="outreach-kpi-icon" style={{ background: '#ffedd5' }}>💬</span>
           </div>
-          <div className="outreach-kpi-val" style={{ color: '#c2410c' }}>{summary.replies_received || 0}</div>
-          <div className="outreach-kpi-sub">Detected thread replies</div>
+          <div className="outreach-kpi-val" style={{ color: '#c2410c' }}>{repliedEmailsList.length || summary.replies_received || 0}</div>
+          <div className="outreach-kpi-sub" style={{ color: '#ea580c', fontWeight: 700 }}>Click to view project details ➔</div>
         </div>
       </div>
 
@@ -1595,19 +1616,35 @@ Website: www.gisfy.co.in`;
           <div className="outreach-subnav">
             <button
               className={`outreach-subnav-btn ${subTab === 'drafts' ? 'active' : ''}`}
-              onClick={() => setSubTab('drafts')}
+              onClick={() => { setSubTab('drafts'); setCurrentPage(1); }}
             >
               📝 Drafts Pending Review ({pendingDraftsList.length})
             </button>
             <button
               className={`outreach-subnav-btn ${subTab === 'sent' ? 'active' : ''}`}
-              onClick={() => setSubTab('sent')}
+              onClick={() => { setSubTab('sent'); setCurrentPage(1); }}
             >
               📤 Sent &amp; Follow-up Tracker ({sentEmailsList.length})
             </button>
             <button
+              className={`outreach-subnav-btn ${subTab === 'replies' ? 'active' : ''}`}
+              onClick={() => { setSubTab('replies'); setCurrentPage(1); }}
+              style={{
+                borderColor: subTab === 'replies' ? '#ea580c' : (repliedEmailsList.length > 0 ? '#fdba74' : undefined),
+                color: subTab === 'replies' ? '#ea580c' : undefined,
+                fontWeight: 700
+              }}
+            >
+              💬 Partner Replies ({repliedEmailsList.length})
+              {repliedEmailsList.length > 0 && (
+                <span style={{ marginLeft: '6px', background: '#ffedd5', color: '#c2410c', padding: '1px 6px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 800 }}>
+                  NEW
+                </span>
+              )}
+            </button>
+            <button
               className={`outreach-subnav-btn ${subTab === 'logs' ? 'active' : ''}`}
-              onClick={() => setSubTab('logs')}
+              onClick={() => { setSubTab('logs'); setCurrentPage(1); }}
             >
               📋 Execution History &amp; Logs
             </button>
@@ -1711,7 +1748,7 @@ Website: www.gisfy.co.in`;
           )}
 
           <div style={{ marginLeft: 'auto', fontSize: '0.8rem', color: '#64748b' }}>
-            Showing <b>{subTab === 'drafts' ? pendingDraftsList.length : sentEmailsList.length}</b> verified partner recommendations across 29 States &amp; ADB
+            Showing <b>{subTab === 'drafts' ? pendingDraftsList.length : (subTab === 'sent' ? sentEmailsList.length : repliedEmailsList.length)}</b> partner records across 29 States &amp; ADB
           </div>
         </div>
 
@@ -1876,7 +1913,7 @@ Website: www.gisfy.co.in`;
                                 gap: '4px',
                                 cursor: 'pointer'
                               }}
-                              title={`Open pre-filled proposal in Microsoft Outlook from ${draft.sender_email || 'support@gisfy.co.in'} (CC: bidding@gisfy.co.in)`}
+                              title={`Open pre-filled proposal in Microsoft Outlook from ${draft.sender_email || 'support@gisfy.co.in'}`}
                             >
                               📬 Outlook ({draft.sender_email ? draft.sender_email.split('@')[0] : 'support'})
                             </button>
@@ -1897,7 +1934,7 @@ Website: www.gisfy.co.in`;
                                 gap: '4px',
                                 cursor: 'pointer'
                               }}
-                              title="Open pre-filled proposal in Gmail from bidding.gisfy@gmail.com (CC: bidding@gisfy.co.in)"
+                              title="Open pre-filled proposal in Gmail from bidding.gisfy@gmail.com"
                             >
                               ✉️ Gmail
                             </button>
@@ -2030,15 +2067,43 @@ Website: www.gisfy.co.in`;
                       </td>
                       <td>
                         <div className="outreach-tender-cell">
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px', flexWrap: 'wrap' }}>
                             <span className="outreach-tender-id">#{email.tender_id || 'TEST'}</span>
                             {email.is_adb || email.scope === 'adb' || (email.state_name || '').includes('ADB') ? (
                               <span className="scope-pill-badge adb">🌐 ADB Multilateral</span>
                             ) : (
                               <span className="scope-pill-badge state">🏛️ 29 States Tender</span>
                             )}
+                            {email.state_name && (
+                              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>📍 {email.state_name}</span>
+                            )}
                           </div>
-                          <span className="outreach-tender-title">{email.project_name || email.tender_title}</span>
+                          <span className="outreach-tender-title" style={{ fontWeight: 700, color: '#0f172a' }}>
+                            {email.project_name || email.tender_title || 'Project Assignment'}
+                          </span>
+                          {(email.response_status === 'replied' || email.status === 'Replied' || email.status === 'replied') && (
+                            <div style={{
+                              marginTop: '6px',
+                              padding: '5px 8px',
+                              background: '#fff7ed',
+                              border: '1px solid #fed7aa',
+                              borderRadius: '6px',
+                              fontSize: '0.74rem',
+                              color: '#c2410c'
+                            }}>
+                              <div style={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
+                                <span>💬 Partner Replied</span>
+                                {email.response_received_at && (
+                                  <span style={{ fontSize: '0.68rem', color: '#9a3412', fontWeight: 500 }}>
+                                    ({new Date(email.response_received_at).toLocaleDateString('en-IN')})
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ fontStyle: 'italic', color: '#431407' }}>
+                                "{email.response_snippet || 'Partner responded to proposal'}"
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </td>
                       <td>
@@ -2138,6 +2203,21 @@ Website: www.gisfy.co.in`;
                               ✓ Confirm
                             </button>
                           )}
+                          <button
+                            className="outreach-act-btn"
+                            onClick={() => handleRecordReply(email.id)}
+                            style={{
+                              padding: '2px 8px',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              background: '#fff7ed',
+                              color: '#c2410c',
+                              border: '1px solid #fed7aa'
+                            }}
+                            title="Record or update partner reply and response notes for this project"
+                          >
+                            💬 {(email.response_status === 'replied' || email.status === 'Replied' || email.status === 'replied') ? 'Update Reply' : 'Log Reply'}
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -2149,6 +2229,253 @@ Website: www.gisfy.co.in`;
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.8rem 1.2rem', background: '#f8fafc', borderTop: '1px solid #e2e8f0', flexWrap: 'wrap', gap: '0.5rem' }}>
                 <div style={{ fontSize: '0.85rem', color: '#475569' }}>
                   Showing <b>{(currentPage - 1) * PAGE_SIZE + 1}</b> – <b>{Math.min(currentPage * PAGE_SIZE, sentEmailsList.length)}</b> of <b>{sentEmailsList.length}</b> dispatched emails (Page {currentPage} of {totalPages})
+                </div>
+                <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                  <button
+                    onClick={() => setCurrentPage(1)}
+                    disabled={currentPage === 1}
+                    className="outreach-act-btn"
+                    style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem', opacity: currentPage === 1 ? 0.5 : 1 }}
+                  >
+                    ⏮ First
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
+                    disabled={currentPage === 1}
+                    className="outreach-act-btn"
+                    style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem', opacity: currentPage === 1 ? 0.5 : 1 }}
+                  >
+                    ◀ Prev
+                  </button>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 700, padding: '0 6px', color: '#0f172a' }}>
+                    {currentPage} / {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
+                    disabled={currentPage === totalPages}
+                    className="outreach-act-btn"
+                    style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem', opacity: currentPage === totalPages ? 0.5 : 1 }}
+                  >
+                    Next ▶
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={currentPage === totalPages}
+                    className="outreach-act-btn"
+                    style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem', opacity: currentPage === totalPages ? 0.5 : 1 }}
+                  >
+                    Last ⏭
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab: Partner Replies & Project Association Tracker */}
+        {subTab === 'replies' && (
+          <div className="outreach-table-wrapper">
+            <div style={{
+              padding: '1rem 1.5rem',
+              background: '#fff7ed',
+              borderBottom: '1px solid #fed7aa',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '0.75rem'
+            }}>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#9a3412', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>💬</span> Partner Replies &amp; Project Association Tracker
+                </div>
+                <div style={{ fontSize: '0.8rem', color: '#7c2d12', marginTop: '2px' }}>
+                  When partners reply, this live database connects each response directly to the specific Project Assignment and Tender GISFY contacted them for.
+                </div>
+              </div>
+              <button
+                className="outreach-btn-secondary"
+                onClick={handleCheckReplies}
+                disabled={actionLoading}
+                style={{ background: '#ffffff', borderColor: '#ea580c', color: '#c2410c', fontWeight: 700, padding: '0.4rem 0.8rem', fontSize: '0.78rem' }}
+                title="Poll inbox for partner responses"
+              >
+                <span>🔄</span> Poll Inbox Now
+              </button>
+            </div>
+
+            <table className="outreach-table">
+              <thead>
+                <tr>
+                  <th style={{ width: '22%' }}>Prospective Partner</th>
+                  <th style={{ width: '40%' }}>Project Contacted For</th>
+                  <th style={{ width: '24%' }}>Partner Response &amp; Message</th>
+                  <th style={{ width: '14%' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {repliedEmailsList.length === 0 ? (
+                  <tr>
+                    <td colSpan="4" style={{ textAlign: 'center', padding: '3.5rem 1.5rem', color: '#64748b' }}>
+                      <div style={{ fontSize: '2.2rem', marginBottom: '0.5rem' }}>💬</div>
+                      <div style={{ fontWeight: 700, fontSize: '1rem', color: '#1e293b' }}>No partner replies recorded yet.</div>
+                      <div style={{ fontSize: '0.82rem', marginTop: '0.3rem', maxWidth: '520px', margin: '0.3rem auto 1rem auto', color: '#64748b' }}>
+                        When a partner replies to any GISFY proposal email, or when you click "Check Replies" (or click "Log Reply" in the Sent Tracker), the response will appear here linked directly with full project details!
+                      </div>
+                      <button
+                        onClick={handleCheckReplies}
+                        disabled={actionLoading}
+                        style={{
+                          padding: '0.5rem 1.1rem',
+                          background: '#4f46e5',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: '6px',
+                          fontWeight: 700,
+                          fontSize: '0.82rem',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        🔄 Check Inbox For Replies
+                      </button>
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedRepliedEmails.map(reply => (
+                    <tr key={reply.id} style={{ background: '#fffdfa' }}>
+                      {/* Partner Column */}
+                      <td>
+                        <div className="outreach-partner-cell">
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                            <span className="outreach-partner-name" style={{ fontWeight: 800 }}>{reply.company_name}</span>
+                            {reply.partner_category === 'ADB' || reply.is_adb || reply.scope === 'adb' ? (
+                              <span className="partner-cat-pill adb">ADB Consultant</span>
+                            ) : (
+                              <span className="partner-cat-pill state">State Partner</span>
+                            )}
+                            {reply.partner_country && (
+                              <span style={{ fontSize: '0.72rem', fontWeight: 700, background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', padding: '1px 6px', borderRadius: '4px' }}>
+                                🌍 {reply.partner_country}
+                              </span>
+                            )}
+                          </div>
+                          <span className="outreach-partner-contact">{reply.recipient_name}</span>
+                          <a href={`mailto:${reply.recipient_email}`} style={{ fontSize: '0.8rem', color: '#2563eb', textDecoration: 'none' }}>
+                            {reply.recipient_email}
+                          </a>
+                        </div>
+                      </td>
+
+                      {/* Project Information Contacted For Column (Key User Requirement!) */}
+                      <td>
+                        <div style={{
+                          background: '#f8fafc',
+                          border: '1.5px solid #e2e8f0',
+                          borderRadius: '8px',
+                          padding: '10px 12px',
+                          borderLeft: '4px solid #4f46e5'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                            <span className="outreach-tender-id" style={{ background: '#e0e7ff', color: '#3730a3', fontWeight: 800, padding: '2px 7px', borderRadius: '4px', fontSize: '0.72rem' }}>
+                              TENDER #{reply.tender_id || reply.tender_db_id || 'REF'}
+                            </span>
+                            {reply.is_adb || reply.scope === 'adb' || (reply.state_name || '').includes('ADB') ? (
+                              <span className="scope-pill-badge adb">🌐 ADB Multilateral</span>
+                            ) : (
+                              <span className="scope-pill-badge state">🏛️ 29 States Tender</span>
+                            )}
+                            {reply.state_name && (
+                              <span style={{ fontSize: '0.72rem', color: '#475569', fontWeight: 600 }}>
+                                📍 {reply.state_name}
+                              </span>
+                            )}
+                          </div>
+
+                          <div style={{ fontWeight: 800, fontSize: '0.88rem', color: '#0f172a', lineHeight: 1.4, marginBottom: '6px' }}>
+                            📌 {reply.project_name || reply.tender_title || 'Project Assignment'}
+                          </div>
+
+                          {reply.submission_deadline && (
+                            <div style={{ fontSize: '0.74rem', color: '#b45309', fontWeight: 700, marginBottom: '4px' }}>
+                              ⏰ Submission Deadline: {reply.submission_deadline}
+                            </div>
+                          )}
+
+                          {reply.selection_reason && (
+                            <div style={{ fontSize: '0.74rem', color: '#64748b', fontStyle: 'italic', lineHeight: 1.35 }}>
+                              🎯 Match Score: <strong>{reply.match_score ? reply.match_score.toFixed(1) : '85.0'}%</strong> • {reply.selection_reason}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Partner Response Column */}
+                      <td>
+                        <div style={{
+                          background: '#fff7ed',
+                          border: '1.5px solid #fed7aa',
+                          borderRadius: '8px',
+                          padding: '10px 12px'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                            <span style={{
+                              background: '#ffedd5',
+                              color: '#c2410c',
+                              fontWeight: 800,
+                              fontSize: '0.72rem',
+                              padding: '2px 8px',
+                              borderRadius: '12px',
+                              border: '1px solid #fdba74'
+                            }}>
+                              💬 Partner Replied
+                            </span>
+                            {reply.response_received_at && (
+                              <span style={{ fontSize: '0.7rem', color: '#9a3412', fontWeight: 600 }}>
+                                {new Date(reply.response_received_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: '0.82rem', color: '#431407', lineHeight: 1.45, fontStyle: 'italic' }}>
+                            "{reply.response_snippet || 'Partner responded to proposal thread.'}"
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Original Sent Details & Actions */}
+                      <td>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <div style={{ fontSize: '0.74rem', color: '#64748b' }}>
+                            <div>Sent: <strong>{reply.sent_at ? new Date(reply.sent_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : 'Dispatched'}</strong></div>
+                            <div>From: <span style={{ color: '#0369a1', fontWeight: 600 }}>{reply.sender_email || 'support@gisfy.co.in'}</span></div>
+                          </div>
+                          <button
+                            className="outreach-act-btn"
+                            onClick={() => setPreviewDraft(reply)}
+                            style={{ padding: '4px 8px', fontSize: '0.75rem', fontWeight: 600 }}
+                            title="View the exact proposal email that was sent to this partner"
+                          >
+                            👁️ View Sent Mail
+                          </button>
+                          <button
+                            className="outreach-act-btn"
+                            onClick={() => handleRecordReply(reply.id)}
+                            style={{ padding: '4px 8px', fontSize: '0.75rem', fontWeight: 700, background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}
+                            title="Update reply snippet or notes"
+                          >
+                            ✏️ Update Notes
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+
+            {totalPages > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.8rem 1.2rem', background: '#f8fafc', borderTop: '1px solid #e2e8f0', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ fontSize: '0.85rem', color: '#475569' }}>
+                  Showing <b>{(currentPage - 1) * PAGE_SIZE + 1}</b> – <b>{Math.min(currentPage * PAGE_SIZE, repliedEmailsList.length)}</b> of <b>{repliedEmailsList.length}</b> partner responses (Page {currentPage} of {totalPages})
                 </div>
                 <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
                   <button
@@ -2360,7 +2687,6 @@ Website: www.gisfy.co.in`;
                   ) : (
                     <span>N C Harika &lt;bidding.gisfy@gmail.com&gt;</span>
                   )}
-                  <span> | <strong>CC:</strong> bidding@gisfy.co.in</span>
                 </div>
               </div>
 
@@ -2378,30 +2704,6 @@ Website: www.gisfy.co.in`;
                 onClick={() => setPreviewDraft(null)}
               >
                 Close Preview
-              </button>
-
-              <button
-                className="outreach-act-btn"
-                onClick={() => {
-                  navigator.clipboard.writeText('bidding@gisfy.co.in');
-                  if (showToast) showToast('📋 CC (bidding@gisfy.co.in) copied to clipboard!', 'success');
-                }}
-                style={{
-                  background: '#eff6ff',
-                  color: '#0369a1',
-                  border: '1px solid #bae6fd',
-                  padding: '0.5rem 0.9rem',
-                  borderRadius: '6px',
-                  fontWeight: 600,
-                  fontSize: '0.85rem',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  cursor: 'pointer'
-                }}
-                title="Copy bidding@gisfy.co.in to clipboard for CC field"
-              >
-                📋 Copy CC
               </button>
 
               <button
@@ -2426,7 +2728,7 @@ Website: www.gisfy.co.in`;
               </button>
 
               <a
-                href={`mailto:${encodeURIComponent(previewDraft.recipient_email || '')}?cc=${encodeURIComponent('bidding@gisfy.co.in')}&subject=${encodeURIComponent(previewDraft.subject || '')}&body=${encodeURIComponent(previewDraft.body_text || '')}`}
+                href={`mailto:${encodeURIComponent(previewDraft.recipient_email || '')}?subject=${encodeURIComponent(previewDraft.subject || '')}&body=${encodeURIComponent(previewDraft.body_text || '')}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="outreach-act-btn"
@@ -2442,9 +2744,9 @@ Website: www.gisfy.co.in`;
                   alignItems: 'center',
                   gap: '6px'
                 }}
-                title="Open in Desktop Outlook, Windows Mail, or Mac Mail with CC: bidding@gisfy.co.in automatically filled"
+                title="Open in Desktop Outlook, Windows Mail, or Mac Mail"
               >
-                ✉️ Desktop Mail (With CC)
+                ✉️ Desktop Mail
               </a>
 
               {(previewDraft.scope === 'adb' || previewDraft.is_adb || (previewDraft.state_name || '').toLowerCase().includes('adb')) ? (
@@ -2464,7 +2766,7 @@ Website: www.gisfy.co.in`;
                     gap: '6px',
                     cursor: 'pointer'
                   }}
-                  title={`Open pre-filled proposal in Microsoft Outlook Web from ${previewDraft.sender_email || 'support@gisfy.co.in'} (CC: bidding@gisfy.co.in)`}
+                  title={`Open pre-filled proposal in Microsoft Outlook Web from ${previewDraft.sender_email || 'support@gisfy.co.in'}`}
                 >
                   📬 Open in Outlook ({previewDraft.sender_email || 'support@gisfy.co.in'})
                 </button>
@@ -2485,7 +2787,7 @@ Website: www.gisfy.co.in`;
                     gap: '6px',
                     cursor: 'pointer'
                   }}
-                  title="Open pre-filled proposal in Gmail from bidding.gisfy@gmail.com (CC: bidding@gisfy.co.in)"
+                  title="Open pre-filled proposal in Gmail from bidding.gisfy@gmail.com"
                 >
                   ✉️ Open in Gmail (bidding.gisfy@gmail.com)
                 </button>
@@ -2549,7 +2851,6 @@ Website: www.gisfy.co.in`;
                 <div style={{ color: '#475569', lineHeight: 1.5 }}>
                   • <strong>From:</strong> GISFY Support &lt;support@gisfy.co.in&gt;<br />
                   • <strong>To:</strong> {testRecipient || 'Approved recipient'}<br />
-                  • <strong>CC:</strong> bidding@gisfy.co.in<br />
                   • <strong>Reply-To:</strong> support@gisfy.co.in<br />
                   • <strong>Subject:</strong> Exploring JV / Consortium Partnership – Test Verification Ref #TEST-1<br />
                   • <strong>Body:</strong> Official GISFY JV Letter of Intent with company intro, statutory document requests, agreement clause, and official corporate signature.
@@ -2600,7 +2901,7 @@ Website: www.gisfy.co.in`;
                       <div>• <strong>Delivery Mode:</strong> Authenticated Microsoft 365 Graph API (/me/sendMail)</div>
                       <div>• <strong>Sender:</strong> GISFY Support &lt;support@gisfy.co.in&gt;</div>
                       <div>• <strong>Recipient:</strong> {testResult.recipient}</div>
-                      <div>• <strong>Mandatory CC:</strong> {testResult.cc || 'bidding@gisfy.co.in'}</div>
+                      {testResult.cc && <div>• <strong>CC:</strong> {testResult.cc}</div>}
                       <div>• <strong>Sent Items:</strong> {testResult.sent_folder_verified ? 'Verified in Sent Folder ✅' : 'Verified via Graph API'}</div>
                       <div style={{ marginTop: '0.5rem', fontSize: '0.78rem', color: '#047857', lineHeight: 1.5 }}>
                         Dispatched with <code>saveToSentItems=true</code> directly through GISFY Support Microsoft 365 mailbox!
@@ -2864,7 +3165,7 @@ Website: www.gisfy.co.in`;
                   </div>
                   <ul style={{ fontSize: '0.82rem', color: '#065f46', marginTop: '0.6rem', paddingLeft: '1.3rem', lineHeight: 1.7 }}>
                     <li><strong>Direct One-Click Open in Outlook:</strong> Clicking <em>Send Email</em> or <em>Open in Outlook</em> automatically opens Microsoft Outlook Web or Outlook Desktop/PWA.</li>
-                    <li><strong>Pre-filled Details:</strong> The recipient, mandatory CC (<code>bidding@gisfy.co.in</code>), Subject, and complete Letter of Intent proposal are automatically populated.</li>
+                    <li><strong>Pre-filled Details:</strong> The recipient, Subject, and complete Letter of Intent proposal are automatically populated.</li>
                     <li><strong>Official Signature:</strong> The email body ends with:
                       <div style={{ background: '#ffffff', padding: '0.5rem 0.8rem', borderRadius: '6px', border: '1px solid #a7f3d0', margin: '0.4rem 0', fontFamily: 'monospace', fontSize: '0.78rem' }}>
                         Thanks &amp; Regards,<br />
@@ -2903,7 +3204,6 @@ Website: www.gisfy.co.in`;
                   <div>
                     • <strong>Zero Complex Relays:</strong> Authenticates instantly using a standard Google 16-character App Password.<br />
                     • <strong>Sender / From:</strong> GISFY Support &lt;support@gisfy.co.in&gt;.<br />
-                    • <strong>Mandatory CC:</strong> <code style={{ background: '#fee2e2', padding: '1px 5px', borderRadius: '4px' }}>bidding@gisfy.co.in</code> (Official GISFY bidding archive).<br />
                     • <strong>Official Proposals:</strong> Dispatches GISFY JV / Consortium letters, legal clauses, and signature intact.
                   </div>
                 </div>
@@ -3761,7 +4061,7 @@ Website: www.gisfy.co.in`;
                 </div>
                 <div style={{ fontSize: '0.76rem', color: '#166534', lineHeight: 1.4, marginBottom: '0.6rem' }}>
                   • <strong>From:</strong> N C Harika | Business Development Executive &lt;bidding.gisfy@gmail.com&gt;<br />
-                  • <strong>CC:</strong> bidding@gisfy.co.in | Dispatches automatically without delay.
+                  • <strong>Daily Limit:</strong> 100 emails/day | Dispatches automatically without delay.
                 </div>
                 <button
                   type="button"
@@ -3796,7 +4096,7 @@ Website: www.gisfy.co.in`;
                     <span>ADB Multilateral Projects Outreach</span>
                   </div>
                   <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#1d4ed8', background: '#dbeafe', padding: '2px 8px', borderRadius: '12px' }}>
-                    Rotating Quota
+                    Rotating Quota (100/Sender)
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.6rem' }}>
@@ -3823,7 +4123,7 @@ Website: www.gisfy.co.in`;
                     min="1"
                     max="500"
                     value={adbQuotaInput}
-                    onChange={(e) => setAdbQuotaInput(parseInt(e.target.value) || 50)}
+                    onChange={(e) => setAdbQuotaInput(parseInt(e.target.value) || 100)}
                     style={{
                       padding: '4px 8px',
                       borderRadius: '6px',
@@ -3847,7 +4147,7 @@ Website: www.gisfy.co.in`;
                     1️⃣ <strong>{adbQuotaInput} Mails:</strong> N C Harika | Business Development Executive &lt;support@gisfy.co.in&gt;<br />
                     2️⃣ <strong>Next {adbQuotaInput} Mails:</strong> Farhath | Business Development Executive &lt;farhath@gisfy.co.in&gt;<br />
                     3️⃣ <strong>Next {adbQuotaInput} Mails:</strong> Firza | Business Development Executive &lt;firza@gisfy.co.in&gt;<br />
-                    <em>(Once 50 mails completed through support, next 50 send through Farhath, then Firza without delay)</em>
+                    <em>(Once {adbQuotaInput} mails completed through support, next {adbQuotaInput} send through Farhath, then Firza without delay)</em>
                   </div>
                 </div>
 

@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Query
 from fastapi.responses import FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import tenders, states, keywords, scrape_runs, reports, email_router, partners, collaboration_emails, adb_router
+from app.routers import tenders, states, keywords, scrape_runs, reports, email_router, partners, collaboration_emails, adb_router, devex_router
 from app.services.document_service import ensure_document_exists, fetch_and_download_document_live, run_auto_download, generate_bundle_zip, STORAGE_ROOT, log_scraper_event
 from app.services.live_sync_service import live_sync_manager
 from app.services.partner_service import ensure_partners_seeded
@@ -97,6 +97,7 @@ app.include_router(email_router.router, prefix="/api/email", tags=["Email Dispat
 app.include_router(partners.router, prefix="/api/partners", tags=["Collaboration Partners"])
 app.include_router(collaboration_emails.router, prefix="/api/collaboration", tags=["Partner Outreach Automation"])
 app.include_router(adb_router.router, prefix="/api/adb", tags=["ADB CMS Intelligence"])
+app.include_router(devex_router.router, prefix="/api/devex", tags=["Devex Global Procurement Intelligence"])
 
 
 @app.get("/")

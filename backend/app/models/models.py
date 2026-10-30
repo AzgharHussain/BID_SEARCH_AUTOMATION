@@ -57,6 +57,8 @@ class Tender(Base):
     keywords = relationship("Keyword", secondary="tender_keywords")
     adb_detail = relationship("AdbOpportunityDetail", back_populates="tender", uselist=False, cascade="all, delete-orphan")
     adb_tracker = relationship("AdbProposalTrack", back_populates="tender", uselist=False, cascade="all, delete-orphan")
+    devex_detail = relationship("DevexOpportunityDetail", back_populates="tender", uselist=False, cascade="all, delete-orphan")
+    devex_tracker = relationship("DevexProposalTrack", back_populates="tender", uselist=False, cascade="all, delete-orphan")
 
 class Document(Base):
     __tablename__ = "documents"
@@ -312,4 +314,137 @@ class AdbSyncLog(Base):
     status = Column(String, default="running")  # 'running', 'success', 'completed_with_errors', 'failed'
     error_message = Column(Text, nullable=True)
     summary_json = Column(Text, nullable=True)
+
+
+class DevexOpportunityDetail(Base):
+    """
+    Devex International Procurement Opportunity Detail Model.
+    Captures comprehensive, genuine procurement metadata across donors worldwide
+    (World Bank, UN/UNDP, USAID, AfDB, IDB, Millennium Challenge Corp, etc.).
+    Preserves authentic donor reference numbers, original timezones, and official links.
+    """
+    __tablename__ = "devex_opportunity_details"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tender_id = Column(Integer, ForeignKey("tenders.id"), unique=True, nullable=False, index=True)
+    
+    # Identifiers & Sources
+    devex_id = Column(String, index=True, nullable=True)  # Devex reference ID (e.g. DEVEX-OPP-104928)
+    original_procurement_ref = Column(String, index=True, nullable=True)  # Official donor reference (e.g. WB-P173829-CS01)
+    donor_agency = Column(String, index=True, nullable=False)  # World Bank, UNDP, USAID, AfDB, etc.
+    executing_agency = Column(Text, nullable=True)
+    implementing_agency = Column(Text, nullable=True)
+    
+    # Geography & Classification
+    country = Column(String, index=True, nullable=True)
+    region = Column(String, index=True, nullable=True)  # Sub-Saharan Africa, South Asia, etc.
+    project_sector = Column(String, index=True, nullable=True)  # GIS, Water, Infrastructure, etc.
+    procurement_category = Column(String, nullable=True)  # Consulting Services, Goods, Works
+    opportunity_type = Column(String, default="Tenders and Open Opportunities", index=True)  # Open Tenders, Grants, Awards
+    
+    # Dates, Deadlines & Financials
+    publication_date_str = Column(String, nullable=True)
+    submission_deadline_str = Column(String, nullable=True)  # Original as published with timezone
+    deadline_time = Column(String, nullable=True)
+    deadline_timezone = Column(String, nullable=True)  # e.g. "EST (UTC-5)", "UTC", "CET"
+    deadline_ist = Column(DateTime, nullable=True)  # Calculated IST equivalent when timezone verified
+    estimated_value = Column(Float, nullable=True)
+    currency = Column(String, default="USD")
+    project_duration = Column(String, nullable=True)  # e.g. "24 Months"
+    
+    # Technical & Scope Details
+    objectives = Column(Text, nullable=True)
+    scope_of_work = Column(Text, nullable=True)
+    technical_requirements = Column(Text, nullable=True)
+    eligibility_criteria = Column(Text, nullable=True)
+    qualification_requirements = Column(Text, nullable=True)
+    jv_consortium_rules = Column(Text, nullable=True)
+    required_experts = Column(Text, nullable=True)
+    
+    # Official Source Links & Documents
+    official_donor_website = Column(Text, nullable=True)  # Donor's procurement website
+    official_tender_url = Column(Text, nullable=True)  # Direct official tender link
+    devex_url = Column(Text, nullable=True)  # Devex funding reference link
+    document_availability = Column(String, default="Publicly Available from Donor")  # Public, Registered, Restricted
+    
+    # Integration & Verification Compliance
+    integration_mode = Column(String, default="Option B: Business Alert Ingestion")  # Option A, B, C, D
+    last_verified_at = Column(DateTime, default=datetime.utcnow)
+    raw_details_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tender = relationship("Tender", back_populates="devex_detail")
+
+
+class DevexProposalTrack(Base):
+    """
+    Tracks GISFY's proposal progression for Devex international opportunities.
+    Workflow stages:
+    Opportunity Identified -> Under Evaluation -> Eligible -> EOI Preparation ->
+    EOI Submitted -> Shortlisted -> RFP Received -> Technical Proposal Preparation ->
+    Financial Proposal Preparation -> Proposal Submitted -> Under Evaluation by Client ->
+    Awarded / Not Awarded / Closed
+    """
+    __tablename__ = "devex_proposal_tracks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tender_id = Column(Integer, ForeignKey("tenders.id"), unique=True, nullable=False, index=True)
+
+    pipeline_stage = Column(String, default="Opportunity Identified", index=True)
+    stage_status = Column(String, default="manual_entry")  # 'source_verified', 'manual_entry'
+    submission_portal = Column(String, nullable=True)  # Official portal name (NOT Devex)
+    submission_reference = Column(String, nullable=True)
+    lead_partner_name = Column(String, nullable=True)
+    consortium_partners_json = Column(Text, nullable=True)
+    target_submission_date = Column(DateTime, nullable=True)
+    internal_notes = Column(Text, nullable=True)
+    readiness_score = Column(Float, nullable=True)
+    winnability_summary = Column(Text, nullable=True)
+    history_json = Column(Text, nullable=True)
+    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    tender = relationship("Tender", back_populates="devex_tracker")
+
+
+class DevexSyncLog(Base):
+    """Tracks synchronization runs for Devex opportunity ingestion."""
+    __tablename__ = "devex_sync_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sync_type = Column(String, default="alert_ingestion")  # alert_ingestion, donor_enrichment, manual_import, api_feed
+    integration_mode = Column(String, default="Option B: Business Alert Ingestion")
+    started_at = Column(DateTime, default=datetime.utcnow)
+    finished_at = Column(DateTime, nullable=True)
+    opportunities_found = Column(Integer, default=0)
+    opportunities_added = Column(Integer, default=0)
+    opportunities_updated = Column(Integer, default=0)
+    documents_downloaded = Column(Integer, default=0)
+    documents_missing = Column(Integer, default=0)
+    documents_failed = Column(Integer, default=0)
+    status = Column(String, default="running")  # running, success, completed_with_errors, failed
+    error_message = Column(Text, nullable=True)
+    summary_json = Column(Text, nullable=True)
+
+
+class MasterOpportunityLink(Base):
+    """
+    Module 8: Cross-Source Deduplication & Unified Master Linkage.
+    Links the same procurement opportunity appearing across different sources
+    (e.g. Devex, ADB CMS, World Bank, UNGM) under one unified Master Opportunity record
+    while preserving all individual source references and links.
+    """
+    __tablename__ = "master_opportunity_links"
+
+    id = Column(Integer, primary_key=True, index=True)
+    master_ref = Column(String, index=True, nullable=False)  # Normalized cross-source key
+    primary_tender_id = Column(Integer, ForeignKey("tenders.id"), nullable=False, index=True)
+    source_system = Column(String, index=True, nullable=False)  # 'devex', 'adb_cms', 'state_tender', etc.
+    source_tender_id = Column(Integer, ForeignKey("tenders.id"), nullable=False, index=True)
+    match_confidence = Column(Float, default=1.0)
+    match_criteria = Column(Text, nullable=True)  # JSON explaining why matched (ref_number, title_similarity, url)
+    is_master = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 

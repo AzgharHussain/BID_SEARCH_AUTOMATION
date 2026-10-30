@@ -49,4 +49,5 @@ backend/.email_credentials/
 *.bak*
 scratch_*.py
 storage/
-
+*.db-shm
+*.db-wal

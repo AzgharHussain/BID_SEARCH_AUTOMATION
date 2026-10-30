@@ -75,7 +75,7 @@ def run_smtp_diagnostic(password: str = None, test_recipient: str = None):
     port = 587
     user = "support@gisfy.co.in"
     from_addr = "GISFY Support Team <support@gisfy.co.in>"
-    cc_addr = "bidding@gisfy.co.in"
+    cc_addr = None
 
     print("\n" + "=" * 70)
     print("   GISFY MICROSOFT 365 LIVE SMTP AUTHENTICATION DIAGNOSTIC")
@@ -84,7 +84,8 @@ def run_smtp_diagnostic(password: str = None, test_recipient: str = None):
     print(f"• Encryption: STARTTLS")
     print(f"• Sender:     {from_addr}")
     print(f"• User:       {user}")
-    print(f"• CC:         {cc_addr}")
+    if cc_addr:
+        print(f"• CC:         {cc_addr}")
     print("=" * 70)
 
     # 1. TCP Connection
@@ -160,22 +161,25 @@ def run_smtp_diagnostic(password: str = None, test_recipient: str = None):
         msg["Subject"] = "Exploring JV / Consortium Partnership – Test Verification Ref #TEST-1"
         msg["From"] = from_addr
         msg["To"] = test_recipient
-        msg["Cc"] = cc_addr
+        if cc_addr:
+            msg["Cc"] = cc_addr
         msg["Date"] = datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S +0000")
 
         from app.services.collaboration_email_service import build_collaboration_email_html, build_collaboration_email_text
-        overview = "End-to-end verification of Microsoft 365 Authenticated SMTP outbound email delivery, mandatory CC to bidding@gisfy.co.in, and Sent folder synchronization."
+        overview = "End-to-end verification of Microsoft 365 Authenticated SMTP outbound email delivery and Sent folder synchronization."
         body_text = build_collaboration_email_text(project_name="GISFY SMTP Live Delivery Verification", project_overview=overview)
         body_html = build_collaboration_email_html(project_name="GISFY SMTP Live Delivery Verification", project_overview=overview)
 
         msg.attach(MIMEText(body_text, "plain", "utf-8"))
         msg.attach(MIMEText(body_html, "html", "utf-8"))
 
-        envelope = [test_recipient.strip(), cc_addr.strip()]
+        envelope = [test_recipient.strip()]
+        if cc_addr:
+            envelope.append(cc_addr.strip())
         try:
             server.sendmail(user, envelope, msg.as_string())
             print(f"  ✓ Provider Accepted message (SMTP Code 250 OK)!")
-            print(f"  ✓ Dispatched to {test_recipient} (Mandatory CC: {cc_addr}).")
+            print(f"  ✓ Dispatched to {test_recipient}.")
             
             # Sync to IMAP Sent Items
             from app.services.live_email_provider import live_email_provider

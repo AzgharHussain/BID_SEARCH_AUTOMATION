@@ -506,12 +506,7 @@ def run_ap_live_ingestion(limit: int = 4, db = None) -> Dict[str, Any]:
                         db.add(doc_rec)
                         db.commit()
 
-            # Ensure partner recommendation is updated for this live tender
-            try:
-                from app.services.partner_service import auto_dispatch_collaboration_email_for_tender
-                auto_dispatch_collaboration_email_for_tender(db, existing_tender.id)
-            except Exception:
-                pass
+            # Note: Outbound automated emails disabled pending user verification
 
             ingested_tenders.append({
                 "tender_id": resolved_tender_id,
