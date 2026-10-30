@@ -689,5 +689,5 @@ def trigger_auto_download(background_tasks: BackgroundTasks, sync: bool = Query(
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=7035, reload=True)
 

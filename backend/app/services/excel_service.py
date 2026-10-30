@@ -36,7 +36,7 @@ def format_dmy(val: Any) -> str:
 def generate_proposals_excel(
     report_data: Optional[List[Dict[str, Any]]] = None,
     output_filename: Optional[str] = None,
-    base_api_url: str = "http://127.0.0.1:8000",
+    base_api_url: str = "http://127.0.0.1:7035",
     base_app_url: str = "http://localhost:5173"
 ) -> Path:
     """

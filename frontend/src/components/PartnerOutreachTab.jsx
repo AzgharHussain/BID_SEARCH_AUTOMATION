@@ -3765,11 +3765,11 @@ Website : www.gisfy.co.in`;
                       <strong>Redirect URI:</strong> Platform: <strong>Web</strong><br />
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.3rem', marginBottom: '0.3rem' }}>
                         <code style={{ background: '#ffffff', padding: '4px 8px', borderRadius: '4px', border: '1px solid #bfdbfe', color: '#1e40af', fontWeight: 700 }}>
-                          http://localhost:8000/api/collaboration/m365/callback
+                          http://localhost:7035/api/collaboration/m365/callback
                         </code>
                         <button
                           type="button"
-                          onClick={() => copyToClipboard('http://localhost:8000/api/collaboration/m365/callback', 'redirect_uri')}
+                          onClick={() => copyToClipboard('http://localhost:7035/api/collaboration/m365/callback', 'redirect_uri')}
                           style={{ padding: '3px 8px', fontSize: '0.72rem', borderRadius: '4px', border: '1px solid #93c5fd', background: '#dbeafe', color: '#1d4ed8', cursor: 'pointer', fontWeight: 700 }}
                         >
                           {copiedRedirectUri ? '✅ Copied!' : '📋 Copy URI'}

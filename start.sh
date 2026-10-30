@@ -29,19 +29,19 @@ elif [ -f "$BACKEND_DIR/.venv/bin/python" ]; then
     PYTHON_CMD="$BACKEND_DIR/.venv/bin/python"
 fi
 
-# 1. Start FastAPI Backend if not already running on port 8000
-if lsof -i :8000 >/dev/null 2>&1; then
-    echo "🟢 Backend is already running on http://127.0.0.1:8000"
+# 1. Start FastAPI Backend if not already running on port 7035
+if lsof -i :7035 >/dev/null 2>&1; then
+    echo "🟢 Backend is already running on http://127.0.0.1:7035"
 else
-    echo "⏳ Starting FastAPI Backend Server on port 8000 with $PYTHON_CMD..."
+    echo "⏳ Starting FastAPI Backend Server on port 7035 with $PYTHON_CMD..."
     cd "$BACKEND_DIR" || exit 1
-    PYTHONUNBUFFERED=1 "$PYTHON_CMD" -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info > "$BACKEND_DIR/uvicorn.log" 2>&1 &
+    PYTHONUNBUFFERED=1 "$PYTHON_CMD" -m uvicorn app.main:app --host 0.0.0.0 --port 7035 --log-level info > "$BACKEND_DIR/uvicorn.log" 2>&1 &
     BACKEND_PID=$!
     disown "$BACKEND_PID" 2>/dev/null || true
     
     # Wait up to 15 seconds for backend to be ready
     for i in {1..15}; do
-        if curl -s http://127.0.0.1:8000/api/sync/status >/dev/null 2>&1; then
+        if curl -s http://127.0.0.1:7035/api/sync/status >/dev/null 2>&1; then
             echo "🟢 Backend started successfully!"
             break
         fi
@@ -102,6 +102,6 @@ fi
 
 echo "=========================================================="
 echo "✅ Application is live at: http://127.0.0.1:5173"
-echo "📚 Backend API Docs at:   http://127.0.0.1:8000/docs"
-echo "📊 Master Excel Export:   http://127.0.0.1:8000/api/reports/proposals-excel"
+echo "📚 Backend API Docs at:   http://127.0.0.1:7035/docs"
+echo "📊 Master Excel Export:   http://127.0.0.1:7035/api/reports/proposals-excel"
 echo "=========================================================="

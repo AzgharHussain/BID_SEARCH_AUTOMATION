@@ -14,8 +14,8 @@ An automated procurement intelligence platform that monitors **all 29 Indian Sta
    - One-click direct downloads with proper attachment headers.
 3. **Master Excel Spreadsheet Generation**:
    - Generates formatted `.xlsx` workbooks containing state data, keywords, tenders, deadlines, and clickable `=HYPERLINK()` download links for every attached document.
-   - Available via API endpoint: `http://127.0.0.1:8000/api/reports/proposals-excel`.
-   - In-browser interactive spreadsheet grid: `http://127.0.0.1:8000/api/reports/excel-view`.
+   - Available via API endpoint: `http://127.0.0.1:7035/api/reports/proposals-excel`.
+   - In-browser interactive spreadsheet grid: `http://127.0.0.1:7035/api/reports/excel-view`.
 4. **Automated Real-Time Email Alerts**:
    - 15-minute background monitoring daemon polls state portals for newly published tenders.
    - Instantly compiles and dispatches proposal alerts and comprehensive state digests with attached Excel workbooks.
@@ -74,7 +74,7 @@ Automated Proposals/
 
 ## 🚀 Quick Start (Automated Launcher)
 
-To start both the Backend (Port 8000) and Frontend (Port 5173) together:
+To start both the Backend (Port 7035) and Frontend (Port 5173) together:
 
 ```bash
 chmod +x start.sh
@@ -104,11 +104,11 @@ pip install -r requirements.txt
 cp .env.example .env
 
 # Run FastAPI server
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn app.main:app --host 0.0.0.0 --port 7035 --reload
 ```
 
-* API Documentation: `http://127.0.0.1:8000/docs`
-* Health / Status: `http://127.0.0.1:8000/api/sync/status`
+* API Documentation: `http://127.0.0.1:7035/docs`
+* Health / Status: `http://127.0.0.1:7035/api/sync/status`
 
 ### 2. Frontend Setup (React & Vite)
 
@@ -168,7 +168,7 @@ After=network.target
 Type=simple
 User=ubuntu
 WorkingDirectory=/path/to/BID_SEARCH_AUTOMATION/backend
-ExecStart=/path/to/BID_SEARCH_AUTOMATION/backend/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+ExecStart=/path/to/BID_SEARCH_AUTOMATION/backend/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 7035
 Restart=always
 RestartSec=5
 EnvironmentFile=/path/to/BID_SEARCH_AUTOMATION/backend/.env
@@ -235,15 +235,15 @@ SMTP_FROM=GISFY Procurement System <your_email@gmail.com>
 ## 📊 Excel Export & Document Download APIs
 
 - **Download Master Excel (.xlsx)**:
-  `GET http://127.0.0.1:8000/api/reports/proposals-excel`
+  `GET http://127.0.0.1:7035/api/reports/proposals-excel`
 - **Interactive Spreadsheet View (Browser)**:
-  `GET http://127.0.0.1:8000/api/reports/excel-view`
+  `GET http://127.0.0.1:7035/api/reports/excel-view`
 - **Download Specific Tender Document**:
-  `GET http://127.0.0.1:8000/api/documents/download?id=<DOC_ID>&attachment=true`
+  `GET http://127.0.0.1:7035/api/documents/download?id=<DOC_ID>&attachment=true`
 - **Full State-Keyword Report JSON**:
-  `GET http://127.0.0.1:8000/api/reports/state-keyword`
+  `GET http://127.0.0.1:7035/api/reports/state-keyword`
 - **View Dispatched Email Archive**:
-  `GET http://127.0.0.1:8000/api/email/view/<FILENAME>`
+  `GET http://127.0.0.1:7035/api/email/view/<FILENAME>`
 
 ---
 

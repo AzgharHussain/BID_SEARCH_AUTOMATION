@@ -6,7 +6,7 @@ services:
     container_name: gisfy_proposals_backend
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "7035:7035"
     environment:
       - DATABASE_URL=sqlite:///./test.db
       - PYTHONUNBUFFERED=1
@@ -16,7 +16,7 @@ services:
       - ./backend/team_members.json:/app/team_members.json
       - ./backend/.env:/app/.env
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/api/health"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:7035/api/health"]
       interval: 15s
       timeout: 5s
       retries: 3

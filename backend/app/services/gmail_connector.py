@@ -122,7 +122,7 @@ class GmailConnector:
             "installed": {
                 "client_id": client_id.strip(),
                 "client_secret": client_secret.strip(),
-                "redirect_uris": [redirect_uri or "urn:ietf:wg:oauth:2.0:oob", "http://localhost:8000/api/collaboration/oauth/callback"],
+                "redirect_uris": [redirect_uri or "urn:ietf:wg:oauth:2.0:oob", "http://localhost:7035/api/collaboration/oauth/callback"],
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token"
             }

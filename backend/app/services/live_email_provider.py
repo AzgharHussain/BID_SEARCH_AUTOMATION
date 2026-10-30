@@ -33,7 +33,7 @@ STATE_SENDER_EMAIL = "bidding.gisfy@gmail.com"
 DEFAULT_M365_CLIENT_ID = "c2cd8349-a198-46d6-a6dc-325e86dd67a4"
 DEFAULT_M365_TENANT_ID = "de9e8583-c4c4-4212-9c27-e35cfa247419"
 DEFAULT_M365_TENANT = "de9e8583-c4c4-4212-9c27-e35cfa247419"
-DEFAULT_REDIRECT_URI = "http://localhost:8000/api/collaboration/m365/callback"
+DEFAULT_REDIRECT_URI = "http://localhost:7035/api/collaboration/m365/callback"
 GRAPH_API_BASE = "https://graph.microsoft.com/v1.0"
 
 # External Reputable SMTP & API Providers

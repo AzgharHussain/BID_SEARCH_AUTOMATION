@@ -39,14 +39,15 @@ export const API_BASE = import.meta.env.VITE_API_BASE !== undefined
   ? import.meta.env.VITE_API_BASE
   : (typeof window !== 'undefined' && (
       window.location.port === '5173' || 
+      window.location.port === '7035' || 
       window.location.port === '80' || 
       window.location.port === '443' || 
       !window.location.port
     )
     ? ''
     : (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
-        ? `${window.location.protocol}//${window.location.hostname}:8000`
-        : 'http://127.0.0.1:8000'));
+        ? `${window.location.protocol}//${window.location.hostname}:7035`
+        : 'http://127.0.0.1:7035'));
 
 // Sanitizes portal URLs so they never navigate to 404-inducing synthetic /tender/ subpaths
 export const sanitizePortalUrl = (url, fallback = 'https://eprocure.gov.in') => {

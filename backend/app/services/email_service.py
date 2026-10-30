@@ -36,7 +36,7 @@ def get_gisfy_logo_base64() -> str:
                     return f"data:image/png;base64,{b64}"
             except Exception:
                 pass
-    return "http://127.0.0.1:8000/api/collaboration/gisfy_logo.png"
+    return "http://127.0.0.1:7035/api/collaboration/gisfy_logo.png"
 
 DEFAULT_TEAM_MEMBERS = [
     {"email": "support@gisfy.co.in", "name": "GISFY Support Team", "role": "ADB Support & Multilateral Outreach", "added_at": "2026-10-24T21:42:00"},
@@ -131,7 +131,7 @@ def build_state_keyword_digest_email_html(
     custom_notes: Optional[str] = None,
     recipient_email: str = "bidding.gisfy@gmail.com",
     base_app_url: str = "http://localhost:5173",
-    base_api_url: str = "http://127.0.0.1:8000"
+    base_api_url: str = "http://127.0.0.1:7035"
 ) -> str:
     """
     Generate an executive-level, responsive HTML email report organized by State and Keyword.
@@ -473,7 +473,7 @@ def build_new_proposal_alert_email_html(
     tender_data: Dict[str, Any],
     recipient_email: str = "bidding.gisfy@gmail.com",
     base_app_url: str = "http://localhost:5173",
-    base_api_url: str = "http://127.0.0.1:8000"
+    base_api_url: str = "http://127.0.0.1:7035"
 ) -> str:
     """Generate high-priority alert email when a new proposal is detected on any state portal."""
     now_str = datetime.now().strftime("%A, %d %B %Y • %I:%M %p")

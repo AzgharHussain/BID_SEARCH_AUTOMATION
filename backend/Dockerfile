@@ -20,10 +20,10 @@ COPY . .
 # Ensure storage directories exist
 RUN mkdir -p storage storage/reports storage/sent_emails
 
-EXPOSE 8000
+EXPOSE 7035
 
 # Built-in health check using the /api/health endpoint
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD curl -f http://127.0.0.1:8000/api/health || exit 1
+  CMD curl -f http://127.0.0.1:7035/api/health || exit 1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7035"]
