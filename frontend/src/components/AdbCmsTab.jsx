@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 
 // Region classification for all 29 Indian States
 const STATE_REGIONS = {
@@ -110,6 +110,26 @@ export default function AdbCmsTab({ API_BASE, showToast, onSelectIndianState }) 
   const [selectedStage, setSelectedStage] = useState('');
   const [selectedKeyword, setSelectedKeyword] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 25;
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedCountryTab, selectedCountry, selectedSector, selectedType, selectedStage, selectedKeyword, debouncedSearch]);
+
+  const totalPages = Math.ceil(uniqueOpportunities.length / PAGE_SIZE) || 1;
+  const paginatedOpportunities = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return uniqueOpportunities.slice(start, start + PAGE_SIZE);
+  }, [uniqueOpportunities, currentPage]);
 
   // Modals & Active Opportunity Details
   const [selectedOpp, setSelectedOpp] = useState(null);
@@ -138,13 +158,25 @@ export default function AdbCmsTab({ API_BASE, showToast, onSelectIndianState }) 
   const [outreachCustomNotes, setOutreachCustomNotes] = useState('');
   const [partnerSearchFilter, setPartnerSearchFilter] = useState('');
 
+  // SWR In-Memory Caches for Instant (0ms) Tab Transitions without Buffering
+  const oppsCacheRef = useRef(new Map());
+  const overviewCacheRef = useRef(null);
+
   // 1. Fetch Countries Overview (Hierarchy of India + 29 States & All ADB Member Countries)
   const fetchCountriesOverview = async () => {
-    try {
+    // If cached in memory, immediately render
+    if (overviewCacheRef.current) {
+      setCountriesOverview(overviewCacheRef.current);
+      setOverviewLoading(false);
+    } else {
       setOverviewLoading(true);
+    }
+
+    try {
       const res = await fetch(`${API_BASE}/api/adb/countries-overview`);
       if (res.ok) {
         const data = await res.json();
+        overviewCacheRef.current = data;
         setCountriesOverview(data);
       }
     } catch (err) {
@@ -154,24 +186,37 @@ export default function AdbCmsTab({ API_BASE, showToast, onSelectIndianState }) 
     }
   };
 
-  // 2. Fetch Opportunities & Status
+  // 2. Fetch Opportunities & Status with instant SWR (Stale-While-Revalidate) Cache
   const fetchOpportunities = async () => {
-    try {
-      setLoading(true);
-      const params = new URLSearchParams();
-      // If a specific country is active in the Country Explorer, prioritize it (unless 'India' which shows India opps)
-      const effectiveCountry = selectedCountryTab !== 'ALL' ? selectedCountryTab : selectedCountry;
-      if (effectiveCountry) params.append('country', effectiveCountry);
-      if (selectedSector) params.append('sector', selectedSector);
-      if (selectedType) params.append('consultant_type', selectedType);
-      if (selectedStage) params.append('pipeline_stage', selectedStage);
-      if (selectedKeyword) params.append('keyword', selectedKeyword);
-      if (searchQuery) params.append('search', searchQuery);
-      params.append('limit', '500');
+    const params = new URLSearchParams();
+    // If a specific country is active in the Country Explorer, prioritize it (unless 'India' which shows India opps)
+    const effectiveCountry = selectedCountryTab !== 'ALL' ? selectedCountryTab : selectedCountry;
+    if (effectiveCountry) params.append('country', effectiveCountry);
+    if (selectedSector) params.append('sector', selectedSector);
+    if (selectedType) params.append('consultant_type', selectedType);
+    if (selectedStage) params.append('pipeline_stage', selectedStage);
+    if (selectedKeyword) params.append('keyword', selectedKeyword);
+    if (debouncedSearch) params.append('search', debouncedSearch);
+    params.append('limit', '500');
 
-      const res = await fetch(`${API_BASE}/api/adb/opportunities?${params.toString()}`);
+    const cacheKey = params.toString();
+
+    // Instant 0ms cache rendering to eliminate buffering spinners
+    if (oppsCacheRef.current.has(cacheKey)) {
+      const cached = oppsCacheRef.current.get(cacheKey);
+      setOpportunities(cached.items || []);
+      setTotalCount(cached.total || 0);
+      if (cached.filters) setFilters(cached.filters);
+      setLoading(false);
+    } else if (opportunities.length === 0) {
+      setLoading(true);
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/api/adb/opportunities?${cacheKey}`);
       if (!res.ok) throw new Error('Failed to load ADB opportunities');
       const data = await res.json();
+      oppsCacheRef.current.set(cacheKey, data);
       setOpportunities(data.items || []);
       setTotalCount(data.total || 0);
       if (data.filters) {
@@ -179,7 +224,9 @@ export default function AdbCmsTab({ API_BASE, showToast, onSelectIndianState }) 
       }
     } catch (err) {
       console.error(err);
-      showToast?.('Error loading ADB opportunities', 'error');
+      if (!oppsCacheRef.current.has(cacheKey)) {
+        showToast?.('Error loading ADB opportunities', 'error');
+      }
     } finally {
       setLoading(false);
     }
@@ -206,7 +253,7 @@ export default function AdbCmsTab({ API_BASE, showToast, onSelectIndianState }) 
 
   useEffect(() => {
     fetchOpportunities();
-  }, [selectedCountryTab, selectedCountry, selectedSector, selectedType, selectedStage, selectedKeyword, searchQuery]);
+  }, [selectedCountryTab, selectedCountry, selectedSector, selectedType, selectedStage, selectedKeyword, debouncedSearch]);
 
   // 3. Trigger Live Sync
   const handleTriggerSync = async (maxCount = 5) => {
@@ -219,6 +266,11 @@ export default function AdbCmsTab({ API_BASE, showToast, onSelectIndianState }) 
       if (!res.ok) throw new Error('Sync failed');
       const result = await res.json();
       showToast?.(`ADB Sync Complete! ${result.opportunities_added || 0} added, ${result.documents_downloaded || 0} documents downloaded.`, 'success');
+      
+      // Clear cache on sync so new tenders appear immediately
+      oppsCacheRef.current.clear();
+      overviewCacheRef.current = null;
+
       fetchOpportunities();
       fetchCountriesOverview();
       fetchSyncStatus();
@@ -1550,7 +1602,7 @@ export default function AdbCmsTab({ API_BASE, showToast, onSelectIndianState }) 
               <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>⏳</div>
               <div style={{ fontSize: '1.1rem', fontWeight: 600 }}>Loading Official ADB Opportunities...</div>
             </div>
-          ) : opportunities.length === 0 ? (
+          ) : uniqueOpportunities.length === 0 ? (
             <div style={{
               background: '#ffffff',
               borderRadius: '16px',
@@ -1558,31 +1610,100 @@ export default function AdbCmsTab({ API_BASE, showToast, onSelectIndianState }) 
               textAlign: 'center',
               boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)'
             }}>
-              <span style={{ fontSize: '3rem' }}>🌐</span>
+              <span style={{ fontSize: '3rem' }}>🔍</span>
               <h3 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0f172a', margin: '1rem 0 0.5rem 0' }}>
-                No ADB Opportunities Found for this Filter
+                No ADB Opportunities Found matching your criteria
               </h3>
               <p style={{ color: '#64748b', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
-                Click "Sync Live Now" to scrape the official ADB CMS notices directly into your database.
+                Try clearing your search query or resetting filters to view all opportunities.
               </p>
               <button
-                onClick={() => handleTriggerSync(5)}
+                onClick={() => {
+                  setSearchQuery('');
+                  setSelectedKeyword('');
+                  setSelectedSector('');
+                  setSelectedType('');
+                  setSelectedStage('');
+                  setSelectedCountry('');
+                }}
                 style={{
                   background: '#0284c7',
                   color: '#ffffff',
                   border: 'none',
-                  padding: '0.75rem 1.5rem',
+                  padding: '0.65rem 1.25rem',
                   borderRadius: '10px',
                   fontWeight: 700,
                   cursor: 'pointer'
                 }}
               >
-                ⚡ Sync ADB Opportunities Now
+                🔄 Reset All Filters
               </button>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              {uniqueOpportunities.map(opp => {
+              {/* Pagination Top Bar */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '0.75rem',
+                padding: '0.5rem 0.5rem',
+                background: '#f8fafc',
+                borderRadius: '10px',
+                border: '1px solid #e2e8f0',
+                color: '#475569',
+                fontSize: '0.85rem'
+              }}>
+                <div>
+                  Showing <b>{(currentPage - 1) * PAGE_SIZE + 1}</b> – <b>{Math.min(currentPage * PAGE_SIZE, uniqueOpportunities.length)}</b> of <b>{uniqueOpportunities.length}</b> Opportunities
+                </div>
+                {totalPages > 1 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span>Page <b>{currentPage}</b> of <b>{totalPages}</b></span>
+                    <button
+                      disabled={currentPage === 1}
+                      onClick={() => {
+                        setCurrentPage(p => Math.max(1, p - 1));
+                        window.scrollTo({ top: 380, behavior: 'smooth' });
+                      }}
+                      style={{
+                        padding: '0.2rem 0.6rem',
+                        borderRadius: '6px',
+                        border: '1px solid #cbd5e1',
+                        background: currentPage === 1 ? '#f1f5f9' : '#ffffff',
+                        color: currentPage === 1 ? '#94a3b8' : '#0f172a',
+                        cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                        fontSize: '0.78rem',
+                        fontWeight: 600
+                      }}
+                    >
+                      ◀ Prev
+                    </button>
+                    <button
+                      disabled={currentPage === totalPages}
+                      onClick={() => {
+                        setCurrentPage(p => Math.min(totalPages, p + 1));
+                        window.scrollTo({ top: 380, behavior: 'smooth' });
+                      }}
+                      style={{
+                        padding: '0.2rem 0.6rem',
+                        borderRadius: '6px',
+                        border: '1px solid #cbd5e1',
+                        background: currentPage === totalPages ? '#f1f5f9' : '#ffffff',
+                        color: currentPage === totalPages ? '#94a3b8' : '#0f172a',
+                        cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                        fontSize: '0.78rem',
+                        fontWeight: 600
+                      }}
+                    >
+                      Next ▶
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {paginatedOpportunities.map(opp => {
                 const detail = opp.detail || {};
                 const tracker = opp.tracker || {};
                 const stageColor = getStageColor(tracker.pipeline_stage);
@@ -1876,6 +1997,141 @@ export default function AdbCmsTab({ API_BASE, showToast, onSelectIndianState }) 
                   </div>
                 );
               })}
+
+              {/* Pagination Controls Bottom Bar */}
+              {totalPages > 1 && (
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  marginTop: '1.5rem',
+                  padding: '1rem',
+                  background: '#ffffff',
+                  borderRadius: '12px',
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
+                  border: '1px solid #e2e8f0',
+                  flexWrap: 'wrap'
+                }}>
+                  <button
+                    disabled={currentPage === 1}
+                    onClick={() => {
+                      setCurrentPage(1);
+                      window.scrollTo({ top: 380, behavior: 'smooth' });
+                    }}
+                    style={{
+                      padding: '0.45rem 0.85rem',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      background: currentPage === 1 ? '#f1f5f9' : '#ffffff',
+                      color: currentPage === 1 ? '#94a3b8' : '#0f172a',
+                      cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                      fontSize: '0.82rem',
+                      fontWeight: 600
+                    }}
+                  >
+                    ⏮ First
+                  </button>
+                  <button
+                    disabled={currentPage === 1}
+                    onClick={() => {
+                      setCurrentPage(p => Math.max(1, p - 1));
+                      window.scrollTo({ top: 380, behavior: 'smooth' });
+                    }}
+                    style={{
+                      padding: '0.45rem 0.85rem',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      background: currentPage === 1 ? '#f1f5f9' : '#ffffff',
+                      color: currentPage === 1 ? '#94a3b8' : '#0f172a',
+                      cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                      fontSize: '0.82rem',
+                      fontWeight: 600
+                    }}
+                  >
+                    ◀ Prev
+                  </button>
+
+                  {/* Render numbered pages */}
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 2)
+                    .reduce((acc, p, idx, arr) => {
+                      if (idx > 0 && p - arr[idx - 1] > 1) {
+                        acc.push(-1 * p); // gap indicator
+                      }
+                      acc.push(p);
+                      return acc;
+                    }, [])
+                    .map(p => {
+                      if (p < 0) {
+                        return <span key={`sep-${p}`} style={{ padding: '0 0.25rem', color: '#94a3b8' }}>...</span>;
+                      }
+                      const isActive = p === currentPage;
+                      return (
+                        <button
+                          key={`page-${p}`}
+                          onClick={() => {
+                            setCurrentPage(p);
+                            window.scrollTo({ top: 380, behavior: 'smooth' });
+                          }}
+                          style={{
+                            minWidth: '36px',
+                            height: '36px',
+                            borderRadius: '8px',
+                            border: isActive ? '1px solid #0284c7' : '1px solid #cbd5e1',
+                            background: isActive ? '#0284c7' : '#ffffff',
+                            color: isActive ? '#ffffff' : '#0f172a',
+                            cursor: 'pointer',
+                            fontSize: '0.85rem',
+                            fontWeight: isActive ? 700 : 500,
+                            boxShadow: isActive ? '0 2px 4px rgba(2, 132, 199, 0.25)' : 'none'
+                          }}
+                        >
+                          {p}
+                        </button>
+                      );
+                    })}
+
+                  <button
+                    disabled={currentPage === totalPages}
+                    onClick={() => {
+                      setCurrentPage(p => Math.min(totalPages, p + 1));
+                      window.scrollTo({ top: 380, behavior: 'smooth' });
+                    }}
+                    style={{
+                      padding: '0.45rem 0.85rem',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      background: currentPage === totalPages ? '#f1f5f9' : '#ffffff',
+                      color: currentPage === totalPages ? '#94a3b8' : '#0f172a',
+                      cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                      fontSize: '0.82rem',
+                      fontWeight: 600
+                    }}
+                  >
+                    Next ▶
+                  </button>
+                  <button
+                    disabled={currentPage === totalPages}
+                    onClick={() => {
+                      setCurrentPage(totalPages);
+                      window.scrollTo({ top: 380, behavior: 'smooth' });
+                    }}
+                    style={{
+                      padding: '0.45rem 0.85rem',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      background: currentPage === totalPages ? '#f1f5f9' : '#ffffff',
+                      color: currentPage === totalPages ? '#94a3b8' : '#0f172a',
+                      cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                      fontSize: '0.82rem',
+                      fontWeight: 600
+                    }}
+                  >
+                    Last ⏭
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -2212,24 +2468,24 @@ export default function AdbCmsTab({ API_BASE, showToast, onSelectIndianState }) 
                     gap: '1rem',
                     marginBottom: '1.5rem'
                   }}>
-                    <InfoBox label="COUNTRY / REGION" val={selectedOpp.detail?.country} />
-                    <InfoBox label="PACKAGE NUMBER" val={selectedOpp.detail?.package_number} highlight />
-                    <InfoBox label="CSRN ID / SELECTION NO." val={selectedOpp.detail?.csrn_id || selectedOpp.detail?.selection_number} />
-                    <InfoBox label="PROJECT NUMBER" val={selectedOpp.detail?.project_number} />
-                    <InfoBox label="PROJECT SECTOR" val={selectedOpp.detail?.project_sector} />
-                    <InfoBox label="EXECUTING AGENCY" val={selectedOpp.detail?.executing_agency} />
+                    <InfoBox label="COUNTRY / REGION" val={selectedOpp.detail?.country || 'Regional'} />
+                    <InfoBox label="PACKAGE NUMBER" val={selectedOpp.detail?.package_number || selectedOpp.tender_id} highlight />
+                    <InfoBox label="CSRN ID / SELECTION NO." val={selectedOpp.detail?.csrn_id || selectedOpp.detail?.selection_number || selectedOpp.tender_id} />
+                    <InfoBox label="PROJECT NUMBER" val={selectedOpp.detail?.project_number || 'ADB-' + selectedOpp.id} />
+                    <InfoBox label="PROJECT SECTOR" val={selectedOpp.detail?.project_sector || selectedOpp.department || 'Consulting Services'} />
+                    <InfoBox label="EXECUTING AGENCY" val={selectedOpp.detail?.executing_agency || 'Asian Development Bank'} />
                     <InfoBox label="IMPLEMENTING AGENCY" val={selectedOpp.detail?.implementing_agency || 'Same as Executing Agency'} />
-                    <InfoBox label="CONSULTANT TYPE" val={selectedOpp.detail?.consultant_type} />
-                    <InfoBox label="CONSULTANT SOURCE" val={selectedOpp.detail?.consultant_source} />
-                    <InfoBox label="SELECTION METHOD" val={selectedOpp.detail?.selection_method} />
-                    <InfoBox label="TECHNICAL PROPOSAL TYPE" val={selectedOpp.detail?.technical_proposal_type} />
+                    <InfoBox label="CONSULTANT TYPE" val={selectedOpp.detail?.consultant_type || 'Firm'} />
+                    <InfoBox label="CONSULTANT SOURCE" val={selectedOpp.detail?.consultant_source || 'International'} />
+                    <InfoBox label="SELECTION METHOD" val={selectedOpp.detail?.selection_method || 'QCBS'} />
+                    <InfoBox label="TECHNICAL PROPOSAL TYPE" val={selectedOpp.detail?.technical_proposal_type || 'FTP / Simplified'} />
                     <InfoBox label="BUDGET AMOUNT & TYPE" val={`${selectedOpp.detail?.budget_currency || 'USD'} ${selectedOpp.detail?.budget_amount ? selectedOpp.detail.budget_amount.toLocaleString() : 'Not Disclosed'} (${selectedOpp.detail?.budget_type || 'Estimated'})`} highlightSuccess />
                     <InfoBox label="ENGAGEMENT DURATION" val={selectedOpp.detail?.engagement_period_months ? `${selectedOpp.detail.engagement_period_months} Months` : 'Per TOR Schedule'} />
                     <InfoBox label="ADVANCE ACTION" val={selectedOpp.detail?.advance_action ? 'Yes' : 'No'} />
                     <InfoBox label="APPROVAL DATE & NO." val={`${selectedOpp.detail?.approval_date || 'N/A'} (#${selectedOpp.detail?.approval_number || 'N/A'})`} />
                     <InfoBox label="COMMENCEMENT DATE" val={selectedOpp.detail?.estimated_commencement_date || 'Q1/Q2 Immediate'} />
                     <InfoBox label="OPEN TO NON-MEMBERS" val={selectedOpp.detail?.open_to_non_member ? 'Yes (Open to all global firms)' : 'No (Restricted to ADB Member Countries)'} />
-                    <InfoBox label="MANILA DEADLINE (UTC+8)" val={selectedOpp.detail?.eoi_deadline_str} highlight />
+                    <InfoBox label="MANILA DEADLINE (UTC+8)" val={selectedOpp.detail?.eoi_deadline_str || 'Refer to Notice'} highlight />
                     <InfoBox label="INDIAN STANDARD TIME (IST)" val={selectedOpp.last_date_ist ? new Date(selectedOpp.last_date_ist).toLocaleString('en-IN') : 'N/A'} highlightSuccess />
                     <InfoBox label="CONTACT OFFICER / EMAIL" val={`${selectedOpp.detail?.contact_officer || 'Project Officer'} (${selectedOpp.detail?.contact_email || 'cmshelp@adb.org'})`} />
                   </div>
@@ -2241,7 +2497,7 @@ export default function AdbCmsTab({ API_BASE, showToast, onSelectIndianState }) 
                         📋 Scope of Work & Terms of Reference Excerpt
                       </h4>
                       <p style={{ margin: 0, fontSize: '0.88rem', color: '#334155', lineHeight: 1.6, whiteSpace: 'pre-line' }}>
-                        {selectedOpp.detail.scope_of_work}
+                        {selectedOpp.detail?.scope_of_work}
                       </p>
                     </div>
                   )}
@@ -2253,7 +2509,7 @@ export default function AdbCmsTab({ API_BASE, showToast, onSelectIndianState }) 
                         🎓 Consultant Qualification & Experience Requirements
                       </h4>
                       <p style={{ margin: 0, fontSize: '0.88rem', color: '#334155', lineHeight: 1.6, whiteSpace: 'pre-line' }}>
-                        {selectedOpp.detail.qualification_requirements}
+                        {selectedOpp.detail?.qualification_requirements}
                       </p>
                     </div>
                   )}

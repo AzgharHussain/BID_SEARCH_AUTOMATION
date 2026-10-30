@@ -929,8 +929,19 @@ class AdbCmsConnector:
                         "source_url": doc.source_url
                     }
 
-                    if doc.local_path and os.path.exists(doc.local_path) and doc.access_status == "Verified":
-                        zf.write(doc.local_path, arcname=doc.file_name)
+                    doc_file = None
+                    if doc.local_path:
+                        p = Path(doc.local_path)
+                        if p.exists() and p.is_file():
+                            doc_file = p
+                        else:
+                            fn = doc.file_name or p.name
+                            candidates = list(STORAGE_ROOT.glob(f"**/{fn}"))
+                            if candidates and candidates[0].is_file():
+                                doc_file = candidates[0]
+
+                    if doc_file and doc_file.exists():
+                        zf.write(str(doc_file), arcname=doc.file_name)
                         manifest["documents"].append(doc_entry)
                     else:
                         manifest["missing_or_restricted_documents"].append(doc_entry)

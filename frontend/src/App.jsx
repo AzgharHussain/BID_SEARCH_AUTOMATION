@@ -35,15 +35,19 @@ export const formatDateTimeDMY = (dateInput) => {
 };
 
 // Dynamic backend API URL for local, docker container, and remote server environments
-export const API_BASE = import.meta.env.VITE_API_BASE !== undefined
-  ? import.meta.env.VITE_API_BASE
-  : (typeof window !== 'undefined' && (
+export const API_BASE = (typeof window !== 'undefined' && window.__API_BASE__)
+  || (typeof window !== 'undefined' && window.localStorage?.getItem('API_BASE'))
+  || (import.meta.env.VITE_API_BASE !== undefined ? import.meta.env.VITE_API_BASE : null)
+  || (typeof window !== 'undefined' && (
       window.location.port === '5173' || 
       window.location.port === '5174' || 
       window.location.port === '5175' || 
       window.location.port === '3000' || 
       window.location.port === '4173' || 
       window.location.port === '7035' || 
+      window.location.port === '8000' || 
+      window.location.port === '8080' || 
+      window.location.port === '8081' || 
       window.location.port === '80' || 
       window.location.port === '443' || 
       !window.location.port

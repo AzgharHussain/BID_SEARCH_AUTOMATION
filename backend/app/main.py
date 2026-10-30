@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Query
 from fastapi.responses import FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from app.routers import tenders, states, keywords, scrape_runs, reports, email_router, partners, collaboration_emails, adb_router, devex_router
 from app.services.document_service import ensure_document_exists, fetch_and_download_document_live, run_auto_download, generate_bundle_zip, STORAGE_ROOT, log_scraper_event
 from app.services.live_sync_service import live_sync_manager
@@ -24,6 +25,7 @@ from ensure_all_files_ready import make_authentic_pdf, make_simple_xlsx
 
 app = FastAPI(title="Tender Automation API", version="1.0.0")
 
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
